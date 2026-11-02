@@ -1,57 +1,49 @@
 const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
-  const GRADER_MODELS = [
-  { id: "deepseek/deepseek-chat",        name: "DeepSeek" },
-  { id: "moonshotai/kimi-k3.1-pro",      name: "Kimi" },
-  { id: "google/gemini-2.5-flash",       name: "Gemini" },
-];
-
-const HINTS = [
-  "Alex, what has been the hardest part of this situation for you?",
-  "Jordan, what would need to change for you to feel comfortable in the room?",
-  "What is one thing each of you has tried that has not worked so far?",
-  "Can you both describe what an ideal living situation would look like?",
-  "Alex, what time do you typically need quiet hours to start?",
-  "Jordan, what time do you usually finish classes or unwinding?",
-  "What is one small compromise either side could try this week?",
-  "Can you repeat back what you heard the other person say about this issue?",
+const GRADER_MODELS = [
+  { id: "deepseek/deepseek-chat", name: "DeepSeek" },
+  { id: "moonshotai/kimi-k3.1-pro",    name: "Kimi" },
+  { id: "google/gemini-2.5-flash",     name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
+
+const HINTS = [
+  "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
+  "Try asking: 'Jordan, what time do you usually get back from evening classes?'",
+  "Try asking: 'What is one small change each of you could try this week?'",
+  "Try asking: 'Can you both describe what a good compromise would look like?'",
+  "Try saying: 'I hear both of you. Let me make sure I understand...' then restate both sides.",
+  "Try asking: 'Alex, what is the latest you could tolerate some noise?'",
+  "Try asking: 'Jordan, what is the earliest you could start keeping things quieter?'",
+  "Try proposing: 'What if we try a 2-week experiment with specific quiet hours and check in after?'",
+];
 
 const $ = id => document.getElementById(id);
 
 const DOM = {
-  setup:           $("setup"),
-  chatView:        $("chat-view"),
-  debriefView:     $("debrief-view"),
-  raNameInput:     $("ra-name"),
-  topicSelect:     $("topic-select"),
-  difficultySelect: $("difficulty"),
-  startBtn:        $("start-btn"),
-  raNameDisplay:   $("ra-name-display"),
-  topicBadge:      $("topic-badge"),
-  difficultyBadge: $("difficulty-badge"),
-  residentCards:   $("resident-cards"),
-  chatLog:         $("chat-log"),
-  raInput:         $("ra-input"),
-  sendBtn:         $("send-btn"),
-  endBtn:          $("end-btn"),
-  debriefRaName:   $("debrief-ra-name"),
-  debriefTopic:    $("debrief-topic"),
+  setup, chatView, debriefView,
+  raNameInput, topicSelect, difficultySelect,
+  startBtn, raNameDisplay, topicBadge, difficultyBadge,
+  residentCards, chatLog, raInput, sendBtn, endBtn,
+  debriefRaName, debriefTopic, debriefDifficulty,
+  graderCards, consolidated, restartBtn,
+} = {
+  setup: $("setup"), chatView: $("chat-view"), debriefView: $("debrief-view"),
+  raNameInput: $("ra-name"), topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
+  startBtn: $("start-btn"), raNameDisplay: $("ra-name-display"),
+  topicBadge: $("topic-badge"), difficultyBadge: $("difficulty-badge"),
+  residentCards: $("resident-cards"), chatLog: $("chat-log"),
+  raInput: $("ra-input"), sendBtn: $("send-btn"), endBtn: $("end-btn"),
+  debriefRaName: $("debrief-ra-name"), debriefTopic: $("debrief-topic"),
   debriefDifficulty: $("debrief-difficulty"),
-  graderCards:     $("grader-cards"),
-  consolidated:    $("consolidated-content"),
-  restartBtn:      $("restart-btn"),
+  graderCards: $("grader-cards"), consolidated: $("consolidated-content"),
+  restartBtn: $("restart-btn"),
 };
 
 let session = {
-  raName: "",
-  topic: "noise",
-  difficulty: "medium",
-  messages: [],
-  turnHistory: [],
-  active: false,
-  nextSpeaker: "Alex",
+  raName: "", topic: "noise", difficulty: "medium",
+  turnHistory: [], active: false, nextSpeaker: "Alex",
+  alexAgreed: false, jordanAgreed: false, turnCount: 0,
 };
 
 /* ============================================================
@@ -64,7 +56,6 @@ function getProfiles(topic, difficulty) {
     medium: { alex: "frustrated, exhausted", jordan: "defensive, feels attacked" },
     hard:   { alex: "at breaking point", jordan: "angry, shutting down" },
   };
-
   const stances = {
     noise: {
       alex: "Jordan's noise past midnight prevents sleep. Early classes are suffering.",
@@ -87,37 +78,28 @@ function getProfiles(topic, difficulty) {
       jordan: "Alex labels everything. Sharing was supposed to be part of living together.",
     },
   };
-
   const t = traits[difficulty] || traits.medium;
   const s = stances[topic] || stances.noise;
-
   return {
-    alex: { name: "Alex", handle: "@alex.bio26", meta: "20 · Junior · Biology", trait: "Early riser. Needs structure and quiet.", mood: t.alex, stance: s.alex },
-    jordan: { name: "Jordan", handle: "@jordan.comm25", meta: "19 · Sophomore · Communications", trait: "Night owl. Social, values freedom.", mood: t.jordan, stance: s.jordan },
+    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex },
+    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan},
   };
 }
 
 function renderCards(profiles) {
   DOM.residentCards.innerHTML = `
     <div class="resident-card alex">
-      <div class="card-header">
-        <span class="card-name">${profiles.alex.name}</span>
-        <span class="card-handle">${profiles.alex.handle}</span>
-      </div>
+      <div class="card-header"><span class="card-name">${profiles.alex.name}</span><span class="card-handle">${profiles.alex.handle}</span></div>
       <div class="card-meta">${profiles.alex.meta}</div>
       <div class="card-trait">${profiles.alex.trait}</div>
       <div class="card-stance">${profiles.alex.stance}</div>
     </div>
     <div class="resident-card jordan">
-      <div class="card-header">
-        <span class="card-name">${profiles.jordan.name}</span>
-        <span class="card-handle">${profiles.jordan.handle}</span>
-      </div>
+      <div class="card-header"><span class="card-name">${profiles.jordan.name}</span><span class="card-handle">${profiles.jordan.handle}</span></div>
       <div class="card-meta">${profiles.jordan.meta}</div>
       <div class="card-trait">${profiles.jordan.trait}</div>
       <div class="card-stance">${profiles.jordan.stance}</div>
-    </div>
-  `;
+    </div>`;
 }
 
 /* ============================================================
@@ -126,111 +108,122 @@ function renderCards(profiles) {
 
 function alexPrompt(topic, difficulty, profile) {
   const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
-  return `You are Alex. Profile: ${profile.alex.meta}. ${profile.alex.trait} Current mood: ${profile.alex.mood}.
+  return `You are Alex. ${profile.alex.meta}. ${profile.alex.trait} Currently ${profile.alex.mood}.
 
 The issue: ${profile.alex.stance}
 
-This is your VERY FIRST message to the RA. Output EXACTLY 2 paragraphs separated by a blank line (two newlines). Each paragraph must be only 2-3 sentences. Keep it short.
-
-Paragraph 1: Introduce yourself (name, year, major) and briefly state the problem.
-
-Paragraph 2: Explain one specific way this affects your daily life. End with a direct question to the RA.
-
-IMPORTANT: Do NOT write one long paragraph. Use TWO separate paragraphs with a blank line between them. Do NOT include "Alex:" at the start. Do NOT mention Jordan by name yet.`;
+RULES:
+- Output EXACTLY 2 paragraphs, separated by one blank line.
+- Paragraph 1 must be exactly 2 sentences.
+- Paragraph 2 must be exactly 2 sentences.
+- Paragraph 1: Introduce yourself and state the problem.
+- Paragraph 2: Say how it affects you and ask the RA one question.
+- Do NOT use em dashes. Use periods only.
+- Do NOT write more than 4 sentences total.
+- Do NOT write one long paragraph.
+- Do NOT mention Jordan.
+- Do NOT prefix with "Alex:".`;
 }
 
 function jordanPrompt(topic, difficulty, profile, alexMsg) {
   const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
-  return `You are Jordan. Profile: ${profile.jordan.meta}. ${profile.jordan.trait} Current mood: ${profile.jordan.mood}.
+  return `You are Jordan. ${profile.jordan.meta}. ${profile.jordan.trait} Currently ${profile.jordan.mood}.
 
 The issue: ${profile.jordan.stance}
 
-Alex just said: "${alexMsg}"
+Alex said: "${alexMsg}"
 
-The RA is now asking for your side. Output EXACTLY 2 paragraphs separated by a blank line (two newlines). Each paragraph must be only 2-3 sentences. Keep it short.
-
-Paragraph 1: Introduce yourself (name, year, major) and briefly state the problem from your view.
-
-Paragraph 2: Push back on Alex's version without being hostile. End with how you feel.
-
-IMPORTANT: Do NOT write one long paragraph. Use TWO separate paragraphs with a blank line between them. Do NOT include "Jordan:" at the start.`;
+RULES:
+- Output EXACTLY 2 paragraphs, separated by one blank line.
+- Paragraph 1 must be exactly 2 sentences.
+- Paragraph 2 must be exactly 2 sentences.
+- Paragraph 1: Introduce yourself and state your side.
+- Paragraph 2: Push back without hostility. End with how you feel.
+- Do NOT use em dashes. Use periods only.
+- Do NOT write more than 4 sentences total.
+- Do NOT write one long paragraph.
+- Do NOT prefix with "Jordan:".`;
 }
 
-function mediationPrompt(topic, difficulty, history, nextSpeaker) {
+function mediationPrompt(topic, difficulty, history, nextSpeaker, turnCount) {
   const d = { easy: "cooperative", medium: "frustrated", hard: "very upset and resistant" }[difficulty];
-
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
 
-  return `You are ${nextSpeaker} in a roommate conflict about ${topic}.
-Difficulty: ${difficulty} (you are ${d}).
+  let pressure = "";
+  if (turnCount >= 6) {
+    pressure = "\n\nIMPORTANT: This conversation has gone back and forth several times. You are now willing to accept a reasonable compromise. Show movement toward agreement, not more resistance.";
+  } else if (turnCount >= 4) {
+    pressure = "\n\nIMPORTANT: Start showing openness to a compromise. Do not just repeat your previous position.";
+  }
+
+  return `You are ${nextSpeaker} in a roommate conflict about ${topic}. Difficulty: ${difficulty}.
 
 CONVERSATION:
-${transcript}
+${transcript}${pressure}
 
-The RA just spoke. Respond as ${nextSpeaker} in 2-4 sentences.
-Rules:
-- Address the RA directly
-- Stay in your character (Alex: structured, needs quiet / Jordan: social, needs freedom)
-- If RA was helpful, soften slightly but do not agree instantly
-- If RA was unhelpful, push back
-- Do NOT resolve the conflict yourself
-
-Do NOT include "**${nextSpeaker}:**" at the start. Speak naturally.`;
+RULES:
+- Respond in 2-4 sentences only.
+- Address the RA directly.
+- Stay in character (Alex: needs quiet / Jordan: needs freedom).
+- If the RA proposed a specific compromise, respond to it directly.
+- Do NOT use em dashes. Use periods, commas, or colons only.
+- Do NOT resolve the conflict yourself.
+- Do NOT prefix with "${nextSpeaker}:".`;
 }
 
 function graderPrompt(modelName, topic, difficulty, history) {
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-  return `You are an experienced RA supervisor grading a mediation practice session.
+  return `Grade this RA mediation practice session.
 
-IMPORTANT: Grade the MEDIATOR (the RA), NOT the residents. Focus on how well the RA facilitated the conversation, listened, validated feelings, and proposed solutions.
+IMPORTANT: Grade ONLY the MEDIATOR (the RA). Never grade the residents.
 
-Situation: ${topic} / Difficulty: ${difficulty}
+Situation: ${topic}   Difficulty: ${difficulty}
 
 TRANSCRIPT:
 ${transcript}
 
-Respond ONLY in this format:
+Respond EXACTLY in this format with NO extra text before or after:
 SCORE: [number]/100
 STRENGTHS:
-- [specific strength of the MEDIATOR]
-- [specific strength of the MEDIATOR]
+- [specific mediator strength]
+- [specific mediator strength]
 GAPS:
-- [specific gap of the MEDIATOR]
-- [specific gap of the MEDIATOR]
+- [specific mediator gap]
+- [specific mediator gap]
 
-No em dashes. Plain language. Focus on the MEDIATOR'S performance, not the residents.`;
+Rules:
+- Score 70-100 if mediator listened, validated, and proposed solutions.
+- Score 40-69 if mediator tried but missed key steps.
+- Score 0-39 if mediator did very little or took sides.
+- NO em dashes.`;
 }
 
 function consolidatorPrompt(gradings, history) {
-  const g = gradings.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(g => "- " + g).join("\n")}`).join("\n\n");
-
+  const g = gradings.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(x => "- " + x).join("\n")}`).join("\n\n---\n\n");
   return `Three AI supervisors graded the same RA mediation. Consolidate into one debrief.
 
 ${g}
 
-Output EXACTLY in this format:
+Output EXACTLY:
 
-OVERALL SCORE: [round average of three scores]/100
+OVERALL SCORE: [average of 3 scores]/100
 
 WHAT YOU DID WELL:
-- [specific action, with moment reference]
-- [specific action, with moment reference]
-- [specific action, with moment reference]
+- [specific action with transcript reference]
+- [specific action with transcript reference]
+- [specific action with transcript reference]
 
 WHAT YOU MISSED:
-- [specific gap, with what to do instead]
-- [specific gap, with what to do instead]
-- [specific gap, with what to do instead]
+- [specific gap with what to do instead]
+- [specific gap with what to do instead]
+- [specific gap with what to do instead]
 
 ONE THING TO TRY NEXT TIME:
-- [One concrete technique for the MEDIATOR]
+- [one concrete technique]
 
 Rules:
-- NO em dashes. Use periods, commas, colons, or hyphens only.
-- Concise and action-oriented.
-- Reference specific transcript moments.
-- Do not repeat the same point.
-- ALL feedback must be about the MEDIATOR'S performance, not the residents.`;
+- NO em dashes. Periods, commas, colons, hyphens only.
+- ALL feedback about the MEDIATOR only.`;
 }
 
 /* ============================================================
@@ -254,8 +247,10 @@ function msgEl(sender, text, type) {
 function sysEl(text) {
   const div = document.createElement("div");
   div.className = "message system";
-  div.appendChild(document.createElement("div")).className = "msg-body";
-  div.querySelector(".msg-body").textContent = text;
+  const b = document.createElement("div");
+  b.className = "msg-body";
+  b.textContent = text;
+  div.appendChild(b);
   return div;
 }
 
@@ -263,16 +258,13 @@ function showLoading() {
   const el = document.getElementById("loading-indicator");
   if (el) el.classList.remove("hidden");
 }
-
 function hideLoading() {
   const el = document.getElementById("loading-indicator");
   if (el) el.classList.add("hidden");
 }
-
 function scrollToBottom() {
   DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
 }
-
 function setInput(enabled) {
   DOM.raInput.disabled = !enabled;
   DOM.sendBtn.disabled = !enabled;
@@ -296,27 +288,45 @@ async function call(model, messages) {
   return (m.content || m.reasoning || "").trim();
 }
 
-function determineNextSpeaker(raText, expectedNext) {
-  const lower = raText.toLowerCase();
-  if (/\balex\b/.test(lower)) return "Alex";
-  if (/\bjordan\b/.test(lower)) return "Jordan";
-  return expectedNext;
+/* ============================================================
+   TEXT PROCESSING
+   ============================================================ */
+
+function sanitize(text) {
+  // Replace em dash, en dash, curly quotes with plain equivalents
+  return text
+    .replace(/[\u2014\u2013]/g, " - ")   // em dash, en dash → " - "
+    .replace(/[\u2018\u2019]/g, "'")     // curly single quotes
+    .replace(/[\u201C\u201D]/g, '"')     // curly double quotes
+    .replace(/[\u2026]/g, "...")          // ellipsis
+    .replace(/\n{3,}/g, "\n\n")          // max 2 newlines
+    .trim();
 }
 
 function cleanResponse(raw) {
-  const m = raw.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
-  return m ? m[1].trim() : raw.trim();
+  let t = raw;
+  // Strip accidental Name: prefix
+  const m = t.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
+  if (m) t = m[1];
+  return sanitize(t);
+}
+
+function determineNextSpeaker(raText, expectedNext) {
+  const lower = raText.toLowerCase();
+  const alexWords = ["\balex\b", "\balexandra\b"];
+  const jordanWords = ["\bjordan\b"];
+  if (alexWords.some(w => new RegExp(w, "i").test(raText))) return "Alex";
+  if (jordanWords.some(w => new RegExp(w, "i").test(raText))) return "Jordan";
+  return expectedNext;
 }
 
 function checkAutoEnd(cleanText, speaker) {
-  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay then", "fine then", "that works", "i'm good with", "let's do", "i can try", "i'll try"];
+  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay then", "fine then", "that works", "i'm good with", "let's do", "i can try", "i'll try", "i will try"];
   const lower = cleanText.toLowerCase();
   if (agreeWords.some(w => lower.includes(w))) {
     if (speaker === "Alex") session.alexAgreed = true;
     if (speaker === "Jordan") session.jordanAgreed = true;
-    if (session.alexAgreed && session.jordanAgreed) {
-      return true;
-    }
+    if (session.alexAgreed && session.jordanAgreed) return true;
   }
   return false;
 }
@@ -325,16 +335,28 @@ function checkAutoEnd(cleanText, speaker) {
    SESSION FLOW
    ============================================================ */
 
+function saveLog() {
+  const logs = JSON.parse(localStorage.getItem("ra_logs") || "[]");
+  logs.push({
+    timestamp: new Date().toISOString(),
+    raName: session.raName,
+    topic: session.topic,
+    difficulty: session.difficulty,
+    transcript: session.turnHistory,
+  });
+  localStorage.setItem("ra_logs", JSON.stringify(logs.slice(-20)));
+}
+
 async function startSession() {
   session.raName = DOM.raNameInput.value.trim() || "You";
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
-  session.messages = [];
   session.turnHistory = [];
   session.active = true;
   session.nextSpeaker = "Alex";
   session.alexAgreed = false;
   session.jordanAgreed = false;
+  session.turnCount = 0;
 
   DOM.raNameDisplay.textContent = session.raName;
   DOM.topicBadge.textContent = session.topic;
@@ -358,6 +380,8 @@ async function startSession() {
     const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
     hideLoading();
     const alexText = cleanResponse(alexRaw);
+    console.log("[Alex raw]", alexRaw);
+    console.log("[Alex clean]", alexText);
     DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
     session.turnHistory.push({ sender: "Alex", text: alexText });
     session.nextSpeaker = "Jordan";
@@ -367,6 +391,8 @@ async function startSession() {
     const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
     hideLoading();
     const jordanText = cleanResponse(jordanRaw);
+    console.log("[Jordan raw]", jordanRaw);
+    console.log("[Jordan clean]", jordanText);
     DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
     session.turnHistory.push({ sender: "Jordan", text: jordanText });
     session.nextSpeaker = "Alex";
@@ -392,10 +418,17 @@ async function send() {
   showLoading();
   scrollToBottom();
 
+  session.turnCount++;
+  const expectedNext = session.nextSpeaker;
+  console.log("[Routing] RA said:", text, "| expected:", expectedNext);
+
   try {
-    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker) }]);
+    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker, session.turnCount) }]);
     hideLoading();
     const cleanText = cleanResponse(raw);
+    console.log("[Response raw]", raw);
+    console.log("[Response clean]", cleanText);
+
     const speaker = session.nextSpeaker;
     const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
 
@@ -406,7 +439,9 @@ async function send() {
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
     session.turnHistory.push({ sender: speaker, text: cleanText });
 
-    session.nextSpeaker = determineNextSpeaker(text, speaker === "Alex" ? "Jordan" : "Alex");
+    const next = determineNextSpeaker(text, speaker === "Alex" ? "Jordan" : "Alex");
+    console.log("[Routing] Next speaker:", next);
+    session.nextSpeaker = next;
     setInput(true);
     scrollToBottom();
   } catch (err) {
@@ -421,6 +456,7 @@ async function end() {
   if (!session.active) return;
   session.active = false;
   setInput(false);
+  saveLog();
 
   DOM.chatView.classList.add("hidden");
   DOM.debriefView.classList.remove("hidden");
@@ -430,15 +466,16 @@ async function end() {
   DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
 
   try {
-    // Grade in parallel
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
           const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }]);
-          console.log(`Grader ${g.name} raw:`, raw.substring(0, 200));
-          return parseGrading(raw, g.name);
+          console.log(`[Grader ${g.name} FULL RAW]:`, raw);
+          const parsed = parseGrading(raw, g.name);
+          console.log(`[Grader ${g.name} PARSED]:`, parsed);
+          return parsed;
         } catch (e) {
-          console.error(`Grader ${g.name} failed:`, e.message);
+          console.error(`[Grader ${g.name} FAILED]:`, e.message);
           return { model: g.name, score: 0, strengths: ["Grading failed: " + e.message], gaps: ["Check API key or model availability"] };
         }
       })
@@ -450,12 +487,17 @@ async function end() {
     const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, session.turnHistory) }]);
     renderConsolidated(consolidatedRaw);
   } catch (err) {
-    DOM.consolidated.innerHTML = `<p class="message system"><div class="msg-body">Error: ${err.message}</div></p>`;
+    DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
     console.error(err);
   }
 }
 
+/* ============================================================
+   GRADING
+   ============================================================ */
+
 function parseGrading(raw, name) {
+  console.log(`[parseGrading ${name}] input:`, raw.substring(0, 300));
   const scoreMatch = raw.match(/SCORE[:\s]+(\d+)/i);
   const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
   const strengths = [];
@@ -467,9 +509,17 @@ function parseGrading(raw, name) {
     if (/^GAPS[:\s]/i.test(t)) { section = "g"; continue; }
     if (t.startsWith("- ") && section) {
       (section === "s" ? strengths : gaps).push(t.slice(2));
+    } else if (t.startsWith("* ") && section) {
+      (section === "s" ? strengths : gaps).push(t.slice(2));
     }
   }
-  return { model: name, score, strengths: strengths.length ? strengths : ["No specific strengths noted"], gaps: gaps.length ? gaps : ["No specific gaps noted"] };
+  console.log(`[parseGrading ${name}] score=${score}, strengths=${strengths.length}, gaps=${gaps.length}`);
+  return {
+    model: name,
+    score,
+    strengths: strengths.length ? strengths : ["(No specific strengths parsed)"],
+    gaps: gaps.length ? gaps : ["(No specific gaps parsed)"],
+  };
 }
 
 function renderGraderCards(gradings) {
@@ -480,7 +530,7 @@ function renderGraderCards(gradings) {
       <div class="grader-note">out of 100</div>
       <ul>${g.strengths.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
       <div class="grader-note" style="margin-top:8px;">Gaps:</div>
-      <ul>${g.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul>
+      <ul>${g.gaps.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
     </div>
   `).join("");
 }
@@ -506,7 +556,7 @@ function renderConsolidated(raw) {
     } else if (/^ONE THING TO TRY NEXT TIME:/i.test(t)) {
       cur = { type: "next", items: [], title: "One Thing to Try Next Time" };
       sections.push(cur);
-    } else if (t.startsWith("- ") && cur) {
+    } else if ((t.startsWith("- ") || t.startsWith("* ")) && cur) {
       cur.items.push(t.slice(2));
     } else if (cur && cur.type === "next" && cur.items.length === 0) {
       cur.items.push(t);
@@ -520,7 +570,7 @@ function renderConsolidated(raw) {
     if (s.type === "score") {
       html += `<div class="score-display"><div class="score-number">${s.value}/100</div><div class="score-label">Overall Score</div></div>`;
     } else if (s.type === "next") {
-      html += `<div class="section-block"><h3>${s.title}</h3><ul><li>${esc(s.items.join(" "))}</li></ul></div>`;
+      html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
     } else {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
     }
@@ -555,6 +605,7 @@ if (hintBtn) {
     scrollToBottom();
   });
 }
+
 DOM.restartBtn.addEventListener("click", () => {
   DOM.setup.classList.remove("hidden");
   DOM.chatView.classList.add("hidden");
