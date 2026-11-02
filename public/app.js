@@ -1,83 +1,78 @@
 const API_URL = "/api/chat";
-
 const MAIN_MODEL = "deepseek/deepseek-chat";
-
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat",        name: "DeepSeek" },
   { id: "moonshotai/kimi-k3.1-pro",      name: "Kimi" },
   { id: "google/gemini-2.0-flash-001",   name: "Gemini" },
 ];
-
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
 
+const $ = id => document.getElementById(id);
+
 const DOM = {
-  setupSection:     document.getElementById("setup"),
-  chatSection:      document.getElementById("chat-section"),
-  debriefSection:   document.getElementById("debrief-section"),
-
-  raNameInput:      document.getElementById("ra-name"),
-  topicSelect:      document.getElementById("topic-select"),
-  difficultySelect: document.getElementById("difficulty"),
-  startBtn:         document.getElementById("start-btn"),
-
-  raNameDisplay:    document.getElementById("ra-name-display"),
-  topicDisplay:     document.getElementById("topic-display"),
-  difficultyDisplay: document.getElementById("difficulty-display"),
-  contextCards:     document.getElementById("context-cards"),
-  chatLog:          document.getElementById("chat-log"),
-  raInput:          document.getElementById("ra-input"),
-  sendBtn:          document.getElementById("send-btn"),
-  endBtn:           document.getElementById("end-btn"),
-
-  debriefRaName:    document.getElementById("debrief-ra-name"),
-  debriefTopic:     document.getElementById("debrief-topic"),
-  debriefDifficulty: document.getElementById("debrief-difficulty"),
-  individualGraders: document.getElementById("individual-graders"),
-  consolidatedDebrief: document.getElementById("consolidated-debrief"),
-  restartBtn:       document.getElementById("restart-btn"),
+  setup:           $("setup"),
+  chatView:        $("chat-view"),
+  debriefView:     $("debrief-view"),
+  raNameInput:     $("ra-name"),
+  topicSelect:     $("topic-select"),
+  difficultySelect: $("difficulty"),
+  startBtn:        $("start-btn"),
+  raNameDisplay:   $("ra-name-display"),
+  topicBadge:      $("topic-badge"),
+  difficultyBadge: $("difficulty-badge"),
+  residentCards:   $("resident-cards"),
+  chatLog:         $("chat-log"),
+  raInput:         $("ra-input"),
+  sendBtn:         $("send-btn"),
+  endBtn:          $("end-btn"),
+  debriefRaName:   $("debrief-ra-name"),
+  debriefTopic:    $("debrief-topic"),
+  debriefDifficulty: $("debrief-difficulty"),
+  graderCards:     $("grader-cards"),
+  consolidated:    $("consolidated-content"),
+  restartBtn:      $("restart-btn"),
 };
 
 let session = {
   raName: "",
   topic: "noise",
-  difficulty: "easy",
+  difficulty: "medium",
   messages: [],
   turnHistory: [],
   active: false,
-  turnPhase: "setup", // setup -> alex-intro -> jordan-intro -> mediation
 };
 
 /* ============================================================
-   ROOMMATE PROFILES
+   PROFILES
    ============================================================ */
 
-function getRoommateProfiles(topic, difficulty) {
+function getProfiles(topic, difficulty) {
   const traits = {
-    easy:   { alex: "frustrated but willing to talk", jordan: "defensive but open to compromise" },
-    medium: { alex: "frustrated and tired of being ignored", jordan: "defensive and feels singled out" },
-    hard:   { alex: "very upset, near their breaking point", jordan: "angry, feels attacked, resistant" },
+    easy:   { alex: "annoyed but open", jordan: "defensive but reasonable" },
+    medium: { alex: "frustrated, exhausted", jordan: "defensive, feels attacked" },
+    hard:   { alex: "at breaking point", jordan: "angry, shutting down" },
   };
 
   const stances = {
     noise: {
-      alex: "Jordan plays loud music and has friends over past midnight. Alex cannot sleep and has early classes.",
-      jordan: "Alex goes to bed at 9pm and expects total silence. Jordan has evening classes and needs to unwind.",
+      alex: "Jordan's noise past midnight prevents sleep. Early classes are suffering.",
+      jordan: "Evening classes mean late nights. Alex expects silence at 9pm, which is unrealistic.",
     },
     cleaning: {
-      alex: "Jordan never cleans shared spaces and leaves dishes for days. Alex ends up doing all the work.",
-      jordan: "Alex is obsessively clean and rearranges Jordan's things without asking. Jordan feels micromanaged.",
+      alex: "Jordan never cleans. Shared spaces are a mess. Alex does all the work.",
+      jordan: "Alex rearranges Jordan's things without asking. The standard is obsessive, not fair.",
     },
     "guest policy": {
-      alex: "Jordan's partner sleeps over four nights a week. Alex never agreed to a third roommate.",
-      jordan: "Alex is never around anyway and complains about a guest they barely see. Jordan pays rent too.",
+      alex: "Jordan's partner stays over 4 nights a week. Alex never agreed to a third roommate.",
+      jordan: "Alex is never here. The guest is quiet and respectful. This is not a real problem.",
     },
     hygiene: {
-      alex: "Jordan's laundry piles up for weeks and the room smells. Alex is embarrassed to have anyone over.",
-      jordan: "Alex uses scented products that give Jordan headaches but refuses to stop. Jordan is the one suffering.",
+      alex: "Jordan's laundry piles up for weeks. The smell is embarrassing when anyone visits.",
+      jordan: "Alex's scented products give Jordan headaches. Requests to change them were ignored.",
     },
     "shared items": {
-      alex: "Jordan borrows Alex's food, charger, and clothes without asking and never replaces anything.",
-      jordan: "Alex labels everything and treats the room like a store. Jordan thought sharing was part of living together.",
+      alex: "Jordan borrows food, chargers, clothes without asking. Nothing gets replaced.",
+      jordan: "Alex labels everything. Sharing was supposed to be part of living together.",
     },
   };
 
@@ -85,44 +80,30 @@ function getRoommateProfiles(topic, difficulty) {
   const s = stances[topic] || stances.noise;
 
   return {
-    alex: {
-      name: "Alex",
-      age: "20",
-      major: "Biology",
-      year: "Junior",
-      personality: "Structured, early riser, values quiet and order.",
-      mood: t.alex,
-      stance: s.alex,
-    },
-    jordan: {
-      name: "Jordan",
-      age: "19",
-      major: "Communications",
-      year: "Sophomore",
-      personality: "Social, flexible schedule, values freedom and spontaneity.",
-      mood: t.jordan,
-      stance: s.jordan,
-    },
+    alex: { name: "Alex", handle: "@alex.bio26", meta: "20 · Junior · Biology", trait: "Early riser. Needs structure and quiet.", mood: t.alex, stance: s.alex },
+    jordan: { name: "Jordan", handle: "@jordan.comm25", meta: "19 · Sophomore · Communications", trait: "Night owl. Social, values freedom.", mood: t.jordan, stance: s.jordan },
   };
 }
 
-function renderContextCards(profiles) {
-  DOM.contextCards.innerHTML = `
-    <div class="roommate-card alex">
-      <div class="card-name">${profiles.alex.name}</div>
-      <div class="card-role">Roommate A</div>
-      <div class="card-detail"><strong>Age:</strong> ${profiles.alex.age} · <strong>Year:</strong> ${profiles.alex.year} · <strong>Major:</strong> ${profiles.alex.major}</div>
-      <div class="card-detail"><strong>Personality:</strong> ${profiles.alex.personality}</div>
-      <div class="card-detail"><strong>Current Mood:</strong> ${profiles.alex.mood}</div>
-      <div class="card-stance"><strong>Position:</strong> ${profiles.alex.stance}</div>
+function renderCards(profiles) {
+  DOM.residentCards.innerHTML = `
+    <div class="resident-card alex">
+      <div class="card-header">
+        <span class="card-name">${profiles.alex.name}</span>
+        <span class="card-handle">${profiles.alex.handle}</span>
+      </div>
+      <div class="card-meta">${profiles.alex.meta}</div>
+      <div class="card-trait">${profiles.alex.trait}</div>
+      <div class="card-stance">${profiles.alex.stance}</div>
     </div>
-    <div class="roommate-card jordan">
-      <div class="card-name">${profiles.jordan.name}</div>
-      <div class="card-role">Roommate B</div>
-      <div class="card-detail"><strong>Age:</strong> ${profiles.jordan.age} · <strong>Year:</strong> ${profiles.jordan.year} · <strong>Major:</strong> ${profiles.jordan.major}</div>
-      <div class="card-detail"><strong>Personality:</strong> ${profiles.jordan.personality}</div>
-      <div class="card-detail"><strong>Current Mood:</strong> ${profiles.jordan.mood}</div>
-      <div class="card-stance"><strong>Position:</strong> ${profiles.jordan.stance}</div>
+    <div class="resident-card jordan">
+      <div class="card-header">
+        <span class="card-name">${profiles.jordan.name}</span>
+        <span class="card-handle">${profiles.jordan.handle}</span>
+      </div>
+      <div class="card-meta">${profiles.jordan.meta}</div>
+      <div class="card-trait">${profiles.jordan.trait}</div>
+      <div class="card-stance">${profiles.jordan.stance}</div>
     </div>
   `;
 }
@@ -131,163 +112,136 @@ function renderContextCards(profiles) {
    PROMPTS
    ============================================================ */
 
-function buildAlexIntroPrompt(topic, difficulty, profile) {
-  const d = difficulty === "easy" ? "cooperative" : difficulty === "hard" ? "very upset and emotional" : "frustrated and defensive";
-  return `You are Alex, a roommate in a realistic conflict roleplay for RA training.
+function alexPrompt(topic, difficulty, profile) {
+  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
+  return `You are Alex. Profile: ${profile.alex.meta}. ${profile.alex.trait} Current mood: ${profile.alex.mood}.
 
-YOUR PROFILE:
-- Name: Alex
-- Age: ${profile.alex.age}, ${profile.alex.year}, ${profile.alex.major}
-- Personality: ${profile.alex.personality}
-- Current mood: ${profile.alex.mood}
-- Your position: ${profile.alex.stance}
+The issue: ${profile.alex.stance}
 
-The difficulty is "${difficulty}". You are ${d}.
+This is your FIRST message to the RA. Introduce yourself (name, year, major in one sentence). Then explain your frustration in 2-3 sentences. Be emotional but rational. End with one question or request.
 
-This is the FIRST message. You are speaking directly to the RA. Introduce yourself briefly (name, year, major in one sentence), then explain the ${topic} problem from your perspective in 2-3 sentences. Be emotional but not irrational. End with a question or a request for help.
-
-Format: Start with "**Alex:**" then your response. Do NOT mention Jordan yet.`;
+Difficulty: ${difficulty} (you are ${d}).
+Format: "**Alex:**" then response. Do NOT mention Jordan by name yet.`;
 }
 
-function buildJordanIntroPrompt(topic, difficulty, profile, alexMsg) {
-  const d = difficulty === "easy" ? "cooperative" : difficulty === "hard" ? "very upset and emotional" : "frustrated and defensive";
-  return `You are Jordan, a roommate in a realistic conflict roleplay for RA training.
+function jordanPrompt(topic, difficulty, profile, alexMsg) {
+  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
+  return `You are Jordan. Profile: ${profile.jordan.meta}. ${profile.jordan.trait} Current mood: ${profile.jordan.mood}.
 
-YOUR PROFILE:
-- Name: Jordan
-- Age: ${profile.jordan.age}, ${profile.jordan.year}, ${profile.jordan.major}
-- Personality: ${profile.jordan.personality}
-- Current mood: ${profile.jordan.mood}
-- Your position: ${profile.jordan.stance}
+The issue: ${profile.jordan.stance}
 
-The difficulty is "${difficulty}". You are ${d}.
+Alex just said: "${alexMsg}"
 
-Alex just said to the RA: "${alexMsg}"
+The RA is now asking for your side. This is your FIRST message. Introduce yourself (name, year, major in one sentence). Then give your perspective in 2-3 sentences. Push back on Alex's version without being hostile. End with how you feel.
 
-This is the SECOND message. The RA has acknowledged Alex and is now asking for your side. Introduce yourself briefly (name, year, major in one sentence), then explain YOUR perspective on the ${topic} issue in 2-3 sentences. Push back on Alex's version without being hostile. End with how you feel about the situation.
-
-Format: Start with "**Jordan:**" then your response.`;
+Difficulty: ${difficulty} (you are ${d}).
+Format: "**Jordan:**" then response.`;
 }
 
-function buildMediationPrompt(topic, difficulty, history) {
-  const d = difficulty === "easy" ? "cooperative, willing to listen" : difficulty === "hard" ? "very upset, resistant, emotional" : "frustrated, needs validation before compromising";
-  const lastSpeaker = history.length > 0 ? history[history.length - 1].sender : "Jordan";
-  const nextSpeaker = lastSpeaker === "Alex" ? "Jordan" : "Alex";
+function mediationPrompt(topic, difficulty, history) {
+  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset and resistant" }[difficulty];
+  const last = history[history.length - 1]?.sender || "Jordan";
+  const next = last === "Alex" ? "Jordan" : "Alex";
 
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
 
-  return `You are ${nextSpeaker}, a roommate in a realistic conflict roleplay for RA training.
+  return `You are ${next} in a roommate conflict about ${topic}.
+Difficulty: ${difficulty} (you are ${d}).
 
-TOPIC: ${topic}
-DIFFICULTY: ${difficulty} (you are ${d})
-
-CONVERSATION SO FAR:
+CONVERSATION:
 ${transcript}
 
-The RA just spoke. Respond as ${nextSpeaker} in 2-4 sentences.
+The RA just spoke. Respond as ${next} in 2-4 sentences.
 Rules:
 - Address the RA directly
-- Stay in character
-- If the RA was helpful, soften slightly but do not magically agree
-- If the RA was unhelpful, push back or shut down slightly
+- Stay in your character (Alex: structured, needs quiet / Jordan: social, needs freedom)
+- If RA was helpful, soften slightly but do not agree instantly
+- If RA was unhelpful, push back
 - Do NOT resolve the conflict yourself
 
-Format: Start with "**${nextSpeaker}:**" then your response.`;
+Format: "**${next}:**" then response.`;
 }
 
-function buildGraderPrompt(modelName, topic, difficulty, history) {
+function graderPrompt(modelName, topic, difficulty, history) {
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-  return `You are an experienced RA supervisor grading a practice mediation.
+  return `Grade this RA mediation practice. Grader: ${modelName}.
 
-SESSION:
-- Topic: ${topic}
-- Difficulty: ${difficulty}
-- Grader: ${modelName}
+Situation: ${topic} · Difficulty: ${difficulty}
 
 TRANSCRIPT:
 ${transcript}
 
-Grade the RA's performance on a scale of 1 to 100.
-
-Respond in this exact format:
+Respond ONLY in this format:
 SCORE: [number]/100
 STRENGTHS:
-- [bullet 1]
-- [bullet 2]
+- [specific strength]
+- [specific strength]
 GAPS:
-- [bullet 1]
-- [bullet 2]
+- [specific gap]
+- [specific gap]
 
-Be concise. No em dashes. Use plain language.`;
+No em dashes. Plain language.`;
 }
 
-function buildConsolidatorPrompt(gradings, history) {
-  const g = gradings.map((g, i) => `GRADER ${i + 1} (${g.model}): Score ${g.score}/100\nStrengths:\n${g.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${g.gaps.map(gap => "- " + gap).join("\n")}`).join("\n\n---\n\n");
+function consolidatorPrompt(gradings, history) {
+  const g = gradings.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(g => "- " + g).join("\n")}`).join("\n\n");
 
-  return `You are a senior RA training coordinator. Three different AI supervisors graded the same practice mediation. Consolidate their feedback into one clear, actionable debrief.
+  return `Three AI supervisors graded the same RA mediation. Consolidate into one debrief.
 
 ${g}
 
-Provide the final output in this exact format:
+Output EXACTLY in this format:
 
-OVERALL SCORE: [average of the three scores, rounded to nearest whole number]/100
+OVERALL SCORE: [round average of three scores]/100
 
-WHAT THE RA DID WELL:
-- [specific strength, with action detail]
-- [specific strength, with action detail]
-- [specific strength, with action detail]
+WHAT YOU DID WELL:
+- [specific action, with moment reference]
+- [specific action, with moment reference]
+- [specific action, with moment reference]
 
-WHAT THE RA MISSED:
+WHAT YOU MISSED:
 - [specific gap, with what to do instead]
 - [specific gap, with what to do instead]
 - [specific gap, with what to do instead]
 
 ONE THING TO TRY NEXT TIME:
-[One concrete, specific technique the RA should practice]
+[One concrete technique]
 
 Rules:
-- No em dashes anywhere
-- Be concise and action-oriented
-- Reference specific moments from the conversation
-- Do not repeat the same point multiple times`;
+- No em dashes anywhere. Use periods, commas, colons, or hyphens.
+- Concise and action-oriented.
+- Reference specific transcript moments.
+- Do not repeat the same point.`;
 }
 
 /* ============================================================
    UI HELPERS
    ============================================================ */
 
-function addMessage(sender, text, type) {
+function msgEl(sender, text, type) {
   const div = document.createElement("div");
   div.className = `message ${type}`;
-  const senderSpan = document.createElement("span");
-  senderSpan.className = "sender";
-  senderSpan.textContent = sender;
-  div.appendChild(senderSpan);
-  div.appendChild(document.createTextNode(text));
-  DOM.chatLog.appendChild(div);
-  DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
+  const lbl = document.createElement("span");
+  lbl.className = "msg-sender";
+  lbl.textContent = sender;
+  const body = document.createElement("div");
+  body.className = "msg-body";
+  body.textContent = text;
+  div.appendChild(lbl);
+  div.appendChild(body);
+  return div;
 }
 
-function addSystem(text) {
+function sysEl(text) {
   const div = document.createElement("div");
   div.className = "message system";
-  div.textContent = text;
-  DOM.chatLog.appendChild(div);
-  DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
+  div.appendChild(document.createElement("div")).className = "msg-body";
+  div.querySelector(".msg-body").textContent = text;
+  return div;
 }
 
-function showLoading(text = "Thinking...") {
-  const div = document.createElement("div");
-  div.className = "message system loading";
-  div.id = "loading-msg";
-  div.textContent = text;
-  DOM.chatLog.appendChild(div);
+function scrollToBottom() {
   DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
-}
-
-function hideLoading() {
-  const el = document.getElementById("loading-msg");
-  if (el) el.remove();
 }
 
 function setInput(enabled) {
@@ -301,7 +255,7 @@ function setInput(enabled) {
    API
    ============================================================ */
 
-async function callModel(model, messages) {
+async function call(model, messages) {
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -309,14 +263,13 @@ async function callModel(model, messages) {
   });
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
-  const msg = data.choices[0].message;
-  return (msg.content || msg.reasoning || "").trim();
+  const m = data.choices[0].message;
+  return (m.content || m.reasoning || "").trim();
 }
 
-function parseNamedMessage(raw) {
+function parseName(raw) {
   const m = raw.match(/^\*\*?(\w+)\*\*?[\s:]+(.+)$/s);
-  if (m) return { name: m[1], text: m[2].trim() };
-  return { name: "Roommate", text: raw };
+  return m ? { name: m[1], text: m[2].trim() } : { name: "Resident", text: raw };
 }
 
 /* ============================================================
@@ -330,225 +283,186 @@ async function startSession() {
   session.messages = [];
   session.turnHistory = [];
   session.active = true;
-  session.turnPhase = "alex-intro";
 
   DOM.raNameDisplay.textContent = session.raName;
-  DOM.topicDisplay.textContent = session.topic;
-  DOM.difficultyDisplay.textContent = session.difficulty;
+  DOM.topicBadge.textContent = session.topic;
+  DOM.difficultyBadge.textContent = session.difficulty;
 
-  DOM.setupSection.classList.add("hidden");
-  DOM.chatSection.classList.remove("hidden");
-  DOM.debriefSection.classList.add("hidden");
+  DOM.setup.classList.add("hidden");
+  DOM.chatView.classList.remove("hidden");
+  DOM.debriefView.classList.add("hidden");
   DOM.chatLog.innerHTML = "";
-  DOM.individualGraders.innerHTML = "";
-  DOM.consolidatedDebrief.innerHTML = "";
+  DOM.graderCards.innerHTML = "";
+  DOM.consolidated.innerHTML = "";
 
-  const profiles = getRoommateProfiles(session.topic, session.difficulty);
-  renderContextCards(profiles);
+  const profiles = getProfiles(session.topic, session.difficulty);
+  renderCards(profiles);
 
-  addSystem("Session starting. Meet your residents...");
+  DOM.chatLog.appendChild(sysEl("Session started."));
   setInput(false);
 
   try {
-    // Alex introduces himself
-    showLoading("Alex is introducing himself...");
-    const alexPrompt = buildAlexIntroPrompt(session.topic, session.difficulty, profiles);
-    const alexRaw = await callModel(MAIN_MODEL, [{ role: "system", content: alexPrompt }]);
-    hideLoading();
+    // Alex introduces
+    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
+    const alex = parseName(alexRaw);
+    DOM.chatLog.appendChild(msgEl("Alex", alex.text, "alex"));
+    session.turnHistory.push({ sender: "Alex", text: alex.text });
+    scrollToBottom();
 
-    const alexParsed = parseNamedMessage(alexRaw);
-    addMessage("Alex", alexParsed.text, "alex");
-    session.turnHistory.push({ sender: "Alex", text: alexParsed.text });
+    // Jordan introduces
+    const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alex.text) }]);
+    const jordan = parseName(jordanRaw);
+    DOM.chatLog.appendChild(msgEl("Jordan", jordan.text, "jordan"));
+    session.turnHistory.push({ sender: "Jordan", text: jordan.text });
+    scrollToBottom();
 
-    // Jordan introduces himself
-    showLoading("Jordan is sharing their side...");
-    const jordanPrompt = buildJordanIntroPrompt(session.topic, session.difficulty, profiles, alexParsed.text);
-    const jordanRaw = await callModel(MAIN_MODEL, [{ role: "system", content: jordanPrompt }]);
-    hideLoading();
-
-    const jordanParsed = parseNamedMessage(jordanRaw);
-    addMessage("Jordan", jordanParsed.text, "jordan");
-    session.turnHistory.push({ sender: "Jordan", text: jordanParsed.text });
-
-    session.turnPhase = "mediation";
-    addSystem("The RA (you) may now begin mediating.");
+    DOM.chatLog.appendChild(sysEl("Both residents have shared their sides. Begin mediating."));
     setInput(true);
   } catch (err) {
-    hideLoading();
-    addSystem(`Error: ${err.message}. Please refresh and try again.`);
+    DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Refresh to retry.`));
     console.error(err);
   }
 }
 
-async function sendRAMessage() {
+async function send() {
   const text = DOM.raInput.value.trim();
   if (!text || !session.active) return;
 
-  addMessage(session.raName, text, "ra");
+  DOM.chatLog.appendChild(msgEl(session.raName, text, "ra"));
   session.turnHistory.push({ sender: session.raName, text });
   DOM.raInput.value = "";
   setInput(false);
-
-  showLoading(`${session.turnHistory[session.turnHistory.length - 2]?.sender === "Alex" ? "Jordan" : "Alex"} is responding...`);
+  scrollToBottom();
 
   try {
-    const prompt = buildMediationPrompt(session.topic, session.difficulty, session.turnHistory);
-    const raw = await callModel(MAIN_MODEL, [{ role: "system", content: prompt }]);
-    hideLoading();
-
-    const parsed = parseNamedMessage(raw);
-    const type = parsed.name.toLowerCase().includes("alex") ? "alex" : parsed.name.toLowerCase().includes("jordan") ? "jordan" : "roommate";
-    addMessage(parsed.name, parsed.text, type);
-    session.turnHistory.push({ sender: parsed.name, text: parsed.text });
+    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory) }]);
+    const p = parseName(raw);
+    const type = p.name.toLowerCase().includes("alex") ? "alex" : p.name.toLowerCase().includes("jordan") ? "jordan" : "jordan";
+    DOM.chatLog.appendChild(msgEl(p.name, p.text, type));
+    session.turnHistory.push({ sender: p.name, text: p.text });
     setInput(true);
+    scrollToBottom();
   } catch (err) {
-    hideLoading();
-    addSystem(`Error: ${err.message}. Please try again.`);
+    DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
     setInput(true);
     console.error(err);
   }
 }
 
-/* ============================================================
-   DEBRIEF WITH 3 GRADERS
-   ============================================================ */
-
-async function endSession() {
+async function end() {
   if (!session.active) return;
   session.active = false;
   setInput(false);
 
-  addSystem("Session ended. Sending to 3 AI graders...");
-
-  DOM.chatSection.classList.add("hidden");
-  DOM.debriefSection.classList.remove("hidden");
+  DOM.chatView.classList.add("hidden");
+  DOM.debriefView.classList.remove("hidden");
   DOM.debriefRaName.textContent = session.raName;
   DOM.debriefTopic.textContent = session.topic;
   DOM.debriefDifficulty.textContent = session.difficulty;
-  DOM.consolidatedDebrief.innerHTML = '<div class="loading">Grading in progress... This may take 10-20 seconds.</div>';
+  DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
 
   try {
-    // Run 3 graders in parallel
-    const graderPromises = GRADER_MODELS.map(async (g) => {
-      const prompt = buildGraderPrompt(g.name, session.topic, session.difficulty, session.turnHistory);
-      try {
-        const raw = await callModel(g.id, [{ role: "system", content: prompt }]);
-        return parseGrading(raw, g.name);
-      } catch (err) {
-        console.error(`Grader ${g.name} failed:`, err);
-        return { model: g.name, score: 0, strengths: ["Grading failed"], gaps: [err.message] };
-      }
-    });
+    // Grade in parallel
+    const results = await Promise.all(
+      GRADER_MODELS.map(async g => {
+        try {
+          const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }]);
+          return parseGrading(raw, g.name);
+        } catch (e) {
+          return { model: g.name, score: 0, strengths: ["Grading failed"], gaps: [e.message] };
+        }
+      })
+    );
 
-    const gradings = await Promise.all(graderPromises);
+    renderGraderCards(results);
 
-    // Render individual grader cards
-    renderGraderCards(gradings);
-
-    // Consolidate
-    DOM.consolidatedDebrief.innerHTML = '<div class="loading">Consolidating feedback...</div>';
-    const consolidatePrompt = buildConsolidatorPrompt(gradings, session.turnHistory);
-    const consolidatedRaw = await callModel(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatePrompt }]);
+    DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Consolidating feedback...</div></div>';
+    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, session.turnHistory) }]);
     renderConsolidated(consolidatedRaw);
   } catch (err) {
-    DOM.consolidatedDebrief.innerHTML = `<div class="loading">Error: ${err.message}</div>`;
+    DOM.consolidated.innerHTML = `<p class="message system"><div class="msg-body">Error: ${err.message}</div></p>`;
     console.error(err);
   }
 }
 
-function parseGrading(raw, modelName) {
+function parseGrading(raw, name) {
   const scoreMatch = raw.match(/SCORE:\s*(\d+)/i);
   const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
-
   const strengths = [];
   const gaps = [];
-
-  const lines = raw.split("\n");
   let section = null;
-  for (const line of lines) {
+  for (const line of raw.split("\n")) {
     const t = line.trim();
-    if (/^STRENGTHS:/i.test(t)) { section = "strengths"; continue; }
-    if (/^GAPS:/i.test(t)) { section = "gaps"; continue; }
-    if (/^SCORE:/i.test(t)) continue;
+    if (/^STRENGTHS:/i.test(t)) { section = "s"; continue; }
+    if (/^GAPS:/i.test(t)) { section = "g"; continue; }
     if (t.startsWith("- ") && section) {
-      section === "strengths" ? strengths.push(t.slice(2)) : gaps.push(t.slice(2));
+      (section === "s" ? strengths : gaps).push(t.slice(2));
     }
   }
-
-  return { model: modelName, score, strengths: strengths.length ? strengths : ["No specific strengths noted"], gaps: gaps.length ? gaps : ["No specific gaps noted"] };
+  return { model: name, score, strengths: strengths.length ? strengths : ["No specific strengths noted"], gaps: gaps.length ? gaps : ["No specific gaps noted"] };
 }
 
 function renderGraderCards(gradings) {
-  DOM.individualGraders.innerHTML = gradings.map(g => `
+  DOM.graderCards.innerHTML = gradings.map(g => `
     <div class="grader-card">
-      <h4>${g.model} Grader</h4>
+      <div class="grader-name">${g.model}</div>
       <div class="grader-score">${g.score}</div>
-      <div class="grader-model">out of 100</div>
-      <p style="font-weight:600;font-size:13px;margin:8px 0 4px;">Strengths</p>
-      <ul>${g.strengths.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
-      <p style="font-weight:600;font-size:13px;margin:8px 0 4px;">Gaps</p>
-      <ul>${g.gaps.map(gap => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>
+      <div class="grader-note">out of 100</div>
+      <ul>${g.strengths.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
+      <div class="grader-note" style="margin-top:8px;">Gaps:</div>
+      <ul>${g.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul>
     </div>
   `).join("");
 }
 
 function renderConsolidated(raw) {
-  // Parse sections
-  const sections = [];
   const lines = raw.split("\n");
-  let current = null;
+  let sections = [];
+  let cur = null;
 
-  for (let line of lines) {
+  for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
 
     if (/^OVERALL SCORE:/i.test(t)) {
       const m = t.match(/(\d+)/);
       sections.push({ type: "score", value: m ? m[1] : "N/A" });
-      continue;
-    }
-    if (/^WHAT THE RA DID WELL:/i.test(t)) {
-      current = { type: "strengths", items: [], title: "What You Did Well" };
-      sections.push(current);
-      continue;
-    }
-    if (/^WHAT THE RA MISSED:/i.test(t)) {
-      current = { type: "gaps", items: [], title: "What You Missed" };
-      sections.push(current);
-      continue;
-    }
-    if (/^ONE THING TO TRY NEXT TIME:/i.test(t)) {
-      current = { type: "next", items: [], title: "One Thing to Try Next Time" };
-      sections.push(current);
-      continue;
-    }
-    if (t.startsWith("- ") && current) {
-      current.items.push(t.slice(2));
-    } else if (current && current.type === "next" && current.items.length === 0) {
-      current.items.push(t);
-    } else if (current) {
-      current.items[current.items.length - 1] += " " + t;
+    } else if (/^WHAT YOU DID WELL:/i.test(t)) {
+      cur = { type: "well", items: [], title: "What You Did Well" };
+      sections.push(cur);
+    } else if (/^WHAT YOU MISSED:/i.test(t)) {
+      cur = { type: "missed", items: [], title: "What You Missed" };
+      sections.push(cur);
+    } else if (/^ONE THING TO TRY NEXT TIME:/i.test(t)) {
+      cur = { type: "next", items: [], title: "One Thing to Try Next Time" };
+      sections.push(cur);
+    } else if (t.startsWith("- ") && cur) {
+      cur.items.push(t.slice(2));
+    } else if (cur && cur.type === "next" && cur.items.length === 0) {
+      cur.items.push(t);
+    } else if (cur) {
+      cur.items[cur.items.length - 1] += " " + t;
     }
   }
 
   let html = "";
   for (const s of sections) {
     if (s.type === "score") {
-      html += `<div class="overall-score">${s.value}/100</div><div class="score-label">Overall Score</div>`;
+      html += `<div class="score-display"><div class="score-number">${s.value}/100</div><div class="score-label">Overall Score</div></div>`;
     } else if (s.type === "next") {
-      html += `<div class="debrief-section"><h4>${s.title}</h4><p>${escapeHtml(s.items.join(" "))}</p></div>`;
+      html += `<div class="section-block"><h3>${s.title}</h3><p>${esc(s.items.join(" "))}</p></div>`;
     } else {
-      html += `<div class="debrief-section"><h4>${s.title}</h4><ul>${s.items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul></div>`;
+      html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
     }
   }
 
-  DOM.consolidatedDebrief.innerHTML = html || `<div class="debrief-section">${escapeHtml(raw).replace(/\n/g, "<br>")}</div>`;
+  DOM.consolidated.innerHTML = html || `<div class="section-block">${esc(raw).replace(/\n/g, "<br>")}</div>`;
 }
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+function esc(text) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  return d.innerHTML;
 }
 
 /* ============================================================
@@ -556,20 +470,20 @@ function escapeHtml(text) {
    ============================================================ */
 
 DOM.startBtn.addEventListener("click", startSession);
-DOM.sendBtn.addEventListener("click", sendRAMessage);
-DOM.endBtn.addEventListener("click", endSession);
+DOM.sendBtn.addEventListener("click", send);
+DOM.endBtn.addEventListener("click", end);
 DOM.restartBtn.addEventListener("click", () => {
-  DOM.setupSection.classList.remove("hidden");
-  DOM.chatSection.classList.add("hidden");
-  DOM.debriefSection.classList.add("hidden");
+  DOM.setup.classList.remove("hidden");
+  DOM.chatView.classList.add("hidden");
+  DOM.debriefView.classList.add("hidden");
   DOM.chatLog.innerHTML = "";
-  DOM.contextCards.innerHTML = "";
+  DOM.residentCards.innerHTML = "";
   DOM.raInput.value = "";
 });
 
 DOM.raInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    sendRAMessage();
+    send();
   }
 });

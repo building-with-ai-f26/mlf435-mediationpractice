@@ -7,81 +7,99 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Resident Assistant Practice Scenarios</h1>
-      <p class="tagline">Practice Various Commonplace RA Situations</p>
-    </header>
+  <div class="app">
 
     <!-- SETUP -->
-    <section id="setup">
-      <h2>Start a Practice Session</h2>
-      <div class="form-row">
-        <label for="ra-name">Your Name:</label>
-        <input type="text" id="ra-name" placeholder="Enter your name" />
-      </div>
-      <div class="form-row">
-        <label for="topic-select">Situation:</label>
-        <select id="topic-select">
-          <option value="noise">Noise</option>
-          <option value="cleaning">Cleaning</option>
-          <option value="guest policy">Guest Policy</option>
-          <option value="hygiene">Hygiene</option>
-          <option value="shared items">Shared Items</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label for="difficulty">Difficulty:</label>
-        <select id="difficulty">
-          <option value="easy" selected>Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-      </div>
-      <button id="start-btn" class="btn btn-primary">Start Session</button>
-    </section>
+    <main id="setup" class="setup-view">
+      <div class="setup-card">
+        <header class="setup-header">
+          <h1>RA Practice Scenarios</h1>
+          <p>Practice mediating roommate conflicts with AI residents</p>
+        </header>
 
-    <!-- CHAT -->
-    <section id="chat-section" class="hidden">
-      <div class="chat-header">
-        <h2>Roommate Mediation</h2>
-        <div class="meta">
-          RA: <span id="ra-name-display">You</span> ·
-          Situation: <span id="topic-display">noise</span> ·
-          Difficulty: <span id="difficulty-display">easy</span>
+        <div class="form-stack">
+          <div class="field">
+            <label for="ra-name">Your name</label>
+            <input type="text" id="ra-name" placeholder="Enter your name" />
+          </div>
+
+          <div class="field">
+            <label for="topic-select">Situation</label>
+            <select id="topic-select">
+              <option value="noise">Noise complaint</option>
+              <option value="cleaning">Cleaning dispute</option>
+              <option value="guest policy">Guest policy violation</option>
+              <option value="hygiene">Hygiene concern</option>
+              <option value="shared items">Shared items conflict</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty">
+              <option value="easy">Easy — cooperative residents</option>
+              <option value="medium" selected>Medium — frustrated residents</option>
+              <option value="hard">Hard — near-crisis emotions</option>
+            </select>
+          </div>
+
+          <button id="start-btn" class="btn btn-primary">Begin Session</button>
         </div>
       </div>
+    </main>
 
-      <!-- CONTEXT CARDS -->
-      <div id="context-cards" class="context-cards"></div>
+    <!-- CHAT -->
+    <div id="chat-view" class="chat-view hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>Residents</h2>
+          <div class="session-meta">
+            <span id="topic-badge" class="badge">noise</span>
+            <span id="difficulty-badge" class="badge">medium</span>
+          </div>
+        </div>
+        <div id="resident-cards" class="resident-cards"></div>
+      </aside>
 
-      <div id="chat-log" class="chat-log"></div>
-      <div class="chat-input-row">
-        <input type="text" id="ra-input" placeholder="Type your response as the RA..." autocomplete="off" />
-        <button id="send-btn" class="btn btn-primary">Send</button>
-      </div>
-      <div class="chat-actions">
-        <button id="end-btn" class="btn btn-secondary">End Session & Debrief</button>
-      </div>
-    </section>
+      <main class="chat-main">
+        <header class="chat-toolbar">
+          <div class="toolbar-left">
+            <span class="ra-label">RA:</span>
+            <span id="ra-name-display" class="ra-name">You</span>
+          </div>
+          <button id="end-btn" class="btn btn-small">End & Debrief</button>
+        </header>
+
+        <div id="chat-log" class="chat-log"></div>
+
+        <div class="composer">
+          <input type="text" id="ra-input" placeholder="Type your response..." autocomplete="off" />
+          <button id="send-btn" class="btn btn-primary">Send</button>
+        </div>
+      </main>
+    </div>
 
     <!-- DEBRIEF -->
-    <section id="debrief-section" class="hidden">
-      <h2>Debrief</h2>
+    <main id="debrief-view" class="debrief-view hidden">
+      <header class="debrief-header">
+        <h1>Session Debrief</h1>
+        <p><span id="debrief-ra-name"></span> · <span id="debrief-topic"></span> · <span id="debrief-difficulty"></span></p>
+      </header>
 
-      <div class="debrief-meta">
-        <p>RA: <span id="debrief-ra-name"></span> · Situation: <span id="debrief-topic"></span> · Difficulty: <span id="debrief-difficulty"></span></p>
+      <section class="graders-band">
+        <div id="grader-cards" class="grader-cards"></div>
+      </section>
+
+      <section class="consolidated-panel">
+        <h2>Feedback</h2>
+        <div id="consolidated-content"></div>
+      </section>
+
+      <div class="debrief-actions">
+        <button id="restart-btn" class="btn btn-primary">Start New Session</button>
       </div>
+    </main>
 
-      <div id="individual-graders" class="graders-section"></div>
-
-      <div class="consolidated-section">
-        <h3>Consolidated Feedback</h3>
-        <div id="consolidated-debrief" class="debrief-content"></div>
-      </div>
-
-      <button id="restart-btn" class="btn btn-primary">Start New Session</button>
-    </section>
   </div>
 
   <script src="/app.js"></script>
