@@ -175,6 +175,10 @@ body {
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-header {
@@ -276,13 +280,19 @@ body {
 .resident-card.alex .card-stance { border-color: var(--alex-line); color: var(--alex); }
 .resident-card.jordan .card-stance { border-color: var(--jordan-line); color: var(--jordan); }
 
-/* Chat Main */
+.toolbar-right {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
 
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .chat-toolbar {
@@ -292,6 +302,9 @@ body {
   padding: var(--space-sm) var(--space-lg);
   background: var(--paper);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .toolbar-left {
@@ -311,6 +324,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  min-height: 0;
 }
 
 .message {

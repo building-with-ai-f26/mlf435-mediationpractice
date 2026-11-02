@@ -1,9 +1,20 @@
 const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
-const GRADER_MODELS = [
+  const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat",        name: "DeepSeek" },
   { id: "moonshotai/kimi-k3.1-pro",      name: "Kimi" },
   { id: "google/gemini-2.5-flash",       name: "Gemini" },
+];
+
+const HINTS = [
+  "Ask each resident how they feel about the situation.",
+  "Restate what you heard each person say to show understanding.",
+  "Ask what solution each person would be willing to try.",
+  "Look for common ground between both perspectives.",
+  "Check if both sides agree on a specific plan going forward.",
+  "Ask Alex what would help them feel better in the room.",
+  "Ask Jordan what would help them feel respected.",
+  "Propose a compromise and ask for feedback from both.",
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
 
@@ -119,10 +130,13 @@ function alexPrompt(topic, difficulty, profile) {
 
 The issue: ${profile.alex.stance}
 
-This is your FIRST message to the RA. Introduce yourself (name, year, major in one sentence). Then explain your frustration in 2-3 sentences. Be emotional but rational. End with one question or request.
+This is your FIRST message to the RA. In exactly 2 short paragraphs:
+
+Paragraph 1: Introduce yourself (name, year, major) and state the problem briefly.
+Paragraph 2: Explain how this affects you and end with one question for the RA.
 
 Difficulty: ${difficulty} (you are ${d}).
-Do NOT include "**Alex:**" at the start. Do NOT mention Jordan by name yet.`;
+Do NOT include "Alex:" at the start. Do NOT mention Jordan by name yet.`;
 }
 
 function jordanPrompt(topic, difficulty, profile, alexMsg) {
@@ -133,10 +147,13 @@ The issue: ${profile.jordan.stance}
 
 Alex just said: "${alexMsg}"
 
-The RA is now asking for your side. This is your FIRST message. Introduce yourself (name, year, major in one sentence). Then give your perspective in 2-3 sentences. Push back on Alex's version without being hostile. End with how you feel.
+The RA is now asking for your side. In exactly 2 short paragraphs:
+
+Paragraph 1: Introduce yourself (name, year, major) and state the problem from your view.
+Paragraph 2: Push back on Alex's version without being hostile, and end with how you feel.
 
 Difficulty: ${difficulty} (you are ${d}).
-Do NOT include "**Jordan:**" at the start.`;
+Do NOT include "Jordan:" at the start.`;
 }
 
 function mediationPrompt(topic, difficulty, history, nextSpeaker) {
@@ -269,10 +286,29 @@ async function call(model, messages) {
   return (m.content || m.reasoning || "").trim();
 }
 
-function cleanResponse(raw, expectedName) {
-  // Remove any accidental **Name:** prefix
+function determineNextSpeaker(raText, expectedNext) {
+  const lower = raText.toLowerCase();
+  if (lower.includes("alex")) return "Alex";
+  if (lower.includes("jordan")) return "Jordan";
+  return expectedNext;
+}
+
+function cleanResponse(raw) {
   const m = raw.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
   return m ? m[1].trim() : raw.trim();
+}
+
+function checkAutoEnd(cleanText, speaker) {
+  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay", "fine", "that works", "i'm good with", "let's do"];
+  const lower = cleanText.toLowerCase();
+  if (agreeWords.some(w => lower.includes(w))) {
+    if (speaker === "Alex") session.alexAgreed = true;
+    if (speaker === "Jordan") session.jordanAgreed = true;
+    if (session.alexAgreed && session.jordanAgreed) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /* ============================================================
@@ -287,6 +323,8 @@ async function startSession() {
   session.turnHistory = [];
   session.active = true;
   session.nextSpeaker = "Alex";
+  session.alexAgreed = false;
+  session.jordanAgreed = false;
 
   DOM.raNameDisplay.textContent = session.raName;
   DOM.topicBadge.textContent = session.topic;
@@ -308,7 +346,7 @@ async function startSession() {
   try {
     // Alex introduces
     const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
-    const alexText = cleanResponse(alexRaw, "Alex");
+    const alexText = cleanResponse(alexRaw);
     DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
     session.turnHistory.push({ sender: "Alex", text: alexText });
     session.nextSpeaker = "Jordan";
@@ -316,7 +354,7 @@ async function startSession() {
 
     // Jordan introduces
     const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
-    const jordanText = cleanResponse(jordanRaw, "Jordan");
+    const jordanText = cleanResponse(jordanRaw);
     DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
     session.turnHistory.push({ sender: "Jordan", text: jordanText });
     session.nextSpeaker = "Alex";
@@ -342,12 +380,18 @@ async function send() {
 
   try {
     const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker) }]);
-    const cleanText = cleanResponse(raw, session.nextSpeaker);
+    const cleanText = cleanResponse(raw);
     const speaker = session.nextSpeaker;
     const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
+
+    if (checkAutoEnd(cleanText, speaker)) {
+      DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
+    }
+
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
     session.turnHistory.push({ sender: speaker, text: cleanText });
-    session.nextSpeaker = speaker === "Alex" ? "Jordan" : "Alex";
+
+    session.nextSpeaker = determineNextSpeaker(text, speaker === "Alex" ? "Jordan" : "Alex");
     setInput(true);
     scrollToBottom();
   } catch (err) {
@@ -365,8 +409,8 @@ async function end() {
   DOM.chatView.classList.add("hidden");
   DOM.debriefView.classList.remove("hidden");
   DOM.debriefRaName.textContent = session.raName;
-  DOM.debriefTopic.textContent = session.topic;
-  DOM.debriefDifficulty.textContent = session.difficulty;
+  DOM.debriefTopic.textContent = toTitleCase(session.topic);
+  DOM.debriefDifficulty.textContent = toTitleCase(session.difficulty);
   DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
 
   try {
@@ -394,15 +438,15 @@ async function end() {
 }
 
 function parseGrading(raw, name) {
-  const scoreMatch = raw.match(/SCORE:\s*(\d+)/i);
+  const scoreMatch = raw.match(/SCORE[:\s]+(\d+)/i);
   const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
   const strengths = [];
   const gaps = [];
   let section = null;
   for (const line of raw.split("\n")) {
     const t = line.trim();
-    if (/^STRENGTHS:/i.test(t)) { section = "s"; continue; }
-    if (/^GAPS:/i.test(t)) { section = "g"; continue; }
+    if (/^STRENGTHS[:\s]/i.test(t)) { section = "s"; continue; }
+    if (/^GAPS[:\s]/i.test(t)) { section = "g"; continue; }
     if (t.startsWith("- ") && section) {
       (section === "s" ? strengths : gaps).push(t.slice(2));
     }
@@ -458,7 +502,7 @@ function renderConsolidated(raw) {
     if (s.type === "score") {
       html += `<div class="score-display"><div class="score-number">${s.value}/100</div><div class="score-label">Overall Score</div></div>`;
     } else if (s.type === "next") {
-      html += `<div class="section-block"><h3>${s.title}</h3><p>${esc(s.items.join(" "))}</p></div>`;
+      html += `<div class="section-block"><h3>${s.title}</h3><ul><li>${esc(s.items.join(" "))}</li></ul></div>`;
     } else {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
     }
@@ -473,6 +517,10 @@ function esc(text) {
   return d.innerHTML;
 }
 
+function toTitleCase(str) {
+  return str.replace(/\w\S*/g, txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+}
+
 /* ============================================================
    EVENTS
    ============================================================ */
@@ -480,6 +528,15 @@ function esc(text) {
 DOM.startBtn.addEventListener("click", startSession);
 DOM.sendBtn.addEventListener("click", send);
 DOM.endBtn.addEventListener("click", end);
+
+const hintBtn = document.getElementById("hint-btn");
+if (hintBtn) {
+  hintBtn.addEventListener("click", () => {
+    const hint = HINTS[Math.floor(Math.random() * HINTS.length)];
+    DOM.chatLog.appendChild(sysEl("Hint: " + hint));
+    scrollToBottom();
+  });
+}
 DOM.restartBtn.addEventListener("click", () => {
   DOM.setup.classList.remove("hidden");
   DOM.chatView.classList.add("hidden");
