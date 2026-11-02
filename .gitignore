@@ -7,6 +7,12 @@
 secrets.*
 credentials.json
 
+# Spec Kit machine-local state
+.specify/feature.json
+.specify/extensions/*/local-config.yml
+.specify/integrations/packages/
+.specify/integrations/packages.json
+
 # AI Agent Local State / Logs (keep curated logs in journal/)
 .claude/
 .codex/
