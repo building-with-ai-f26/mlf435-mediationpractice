@@ -7,14 +7,14 @@ const MAIN_MODEL = "deepseek/deepseek-chat";
 ];
 
 const HINTS = [
-  "Ask each resident how they feel about the situation.",
-  "Restate what you heard each person say to show understanding.",
-  "Ask what solution each person would be willing to try.",
-  "Look for common ground between both perspectives.",
-  "Check if both sides agree on a specific plan going forward.",
-  "Ask Alex what would help them feel better in the room.",
-  "Ask Jordan what would help them feel respected.",
-  "Propose a compromise and ask for feedback from both.",
+  "Alex, what has been the hardest part of this situation for you?",
+  "Jordan, what would need to change for you to feel comfortable in the room?",
+  "What is one thing each of you has tried that has not worked so far?",
+  "Can you both describe what an ideal living situation would look like?",
+  "Alex, what time do you typically need quiet hours to start?",
+  "Jordan, what time do you usually finish classes or unwinding?",
+  "What is one small compromise either side could try this week?",
+  "Can you repeat back what you heard the other person say about this issue?",
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
 
@@ -130,13 +130,13 @@ function alexPrompt(topic, difficulty, profile) {
 
 The issue: ${profile.alex.stance}
 
-This is your FIRST message to the RA. In exactly 2 short paragraphs:
+This is your VERY FIRST message to the RA. Output EXACTLY 2 paragraphs separated by a blank line (two newlines). Each paragraph must be only 2-3 sentences. Keep it short.
 
-Paragraph 1: Introduce yourself (name, year, major) and state the problem briefly.
-Paragraph 2: Explain how this affects you and end with one question for the RA.
+Paragraph 1: Introduce yourself (name, year, major) and briefly state the problem.
 
-Difficulty: ${difficulty} (you are ${d}).
-Do NOT include "Alex:" at the start. Do NOT mention Jordan by name yet.`;
+Paragraph 2: Explain one specific way this affects your daily life. End with a direct question to the RA.
+
+IMPORTANT: Do NOT write one long paragraph. Use TWO separate paragraphs with a blank line between them. Do NOT include "Alex:" at the start. Do NOT mention Jordan by name yet.`;
 }
 
 function jordanPrompt(topic, difficulty, profile, alexMsg) {
@@ -147,13 +147,13 @@ The issue: ${profile.jordan.stance}
 
 Alex just said: "${alexMsg}"
 
-The RA is now asking for your side. In exactly 2 short paragraphs:
+The RA is now asking for your side. Output EXACTLY 2 paragraphs separated by a blank line (two newlines). Each paragraph must be only 2-3 sentences. Keep it short.
 
-Paragraph 1: Introduce yourself (name, year, major) and state the problem from your view.
-Paragraph 2: Push back on Alex's version without being hostile, and end with how you feel.
+Paragraph 1: Introduce yourself (name, year, major) and briefly state the problem from your view.
 
-Difficulty: ${difficulty} (you are ${d}).
-Do NOT include "Jordan:" at the start.`;
+Paragraph 2: Push back on Alex's version without being hostile. End with how you feel.
+
+IMPORTANT: Do NOT write one long paragraph. Use TWO separate paragraphs with a blank line between them. Do NOT include "Jordan:" at the start.`;
 }
 
 function mediationPrompt(topic, difficulty, history, nextSpeaker) {
@@ -259,6 +259,16 @@ function sysEl(text) {
   return div;
 }
 
+function showLoading() {
+  const el = document.getElementById("loading-indicator");
+  if (el) el.classList.remove("hidden");
+}
+
+function hideLoading() {
+  const el = document.getElementById("loading-indicator");
+  if (el) el.classList.add("hidden");
+}
+
 function scrollToBottom() {
   DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
 }
@@ -288,8 +298,8 @@ async function call(model, messages) {
 
 function determineNextSpeaker(raText, expectedNext) {
   const lower = raText.toLowerCase();
-  if (lower.includes("alex")) return "Alex";
-  if (lower.includes("jordan")) return "Jordan";
+  if (/\balex\b/.test(lower)) return "Alex";
+  if (/\bjordan\b/.test(lower)) return "Jordan";
   return expectedNext;
 }
 
@@ -299,7 +309,7 @@ function cleanResponse(raw) {
 }
 
 function checkAutoEnd(cleanText, speaker) {
-  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay", "fine", "that works", "i'm good with", "let's do"];
+  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay then", "fine then", "that works", "i'm good with", "let's do", "i can try", "i'll try"];
   const lower = cleanText.toLowerCase();
   if (agreeWords.some(w => lower.includes(w))) {
     if (speaker === "Alex") session.alexAgreed = true;
@@ -344,16 +354,18 @@ async function startSession() {
   setInput(false);
 
   try {
-    // Alex introduces
+    showLoading();
     const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
+    hideLoading();
     const alexText = cleanResponse(alexRaw);
     DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
     session.turnHistory.push({ sender: "Alex", text: alexText });
     session.nextSpeaker = "Jordan";
     scrollToBottom();
 
-    // Jordan introduces
+    showLoading();
     const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
+    hideLoading();
     const jordanText = cleanResponse(jordanRaw);
     DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
     session.turnHistory.push({ sender: "Jordan", text: jordanText });
@@ -363,6 +375,7 @@ async function startSession() {
     DOM.chatLog.appendChild(sysEl("Both residents have shared their sides. Begin mediating."));
     setInput(true);
   } catch (err) {
+    hideLoading();
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Refresh to retry.`));
     console.error(err);
   }
@@ -376,10 +389,12 @@ async function send() {
   session.turnHistory.push({ sender: session.raName, text });
   DOM.raInput.value = "";
   setInput(false);
+  showLoading();
   scrollToBottom();
 
   try {
     const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker) }]);
+    hideLoading();
     const cleanText = cleanResponse(raw);
     const speaker = session.nextSpeaker;
     const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
@@ -395,6 +410,7 @@ async function send() {
     setInput(true);
     scrollToBottom();
   } catch (err) {
+    hideLoading();
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
     setInput(true);
     console.error(err);
@@ -419,9 +435,11 @@ async function end() {
       GRADER_MODELS.map(async g => {
         try {
           const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }]);
+          console.log(`Grader ${g.name} raw:`, raw.substring(0, 200));
           return parseGrading(raw, g.name);
         } catch (e) {
-          return { model: g.name, score: 0, strengths: ["Grading failed"], gaps: [e.message] };
+          console.error(`Grader ${g.name} failed:`, e.message);
+          return { model: g.name, score: 0, strengths: ["Grading failed: " + e.message], gaps: ["Check API key or model availability"] };
         }
       })
     );

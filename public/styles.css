@@ -327,6 +327,39 @@ body {
   min-height: 0;
 }
 
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--system-bg);
+  border-bottom: 1px solid var(--system-line);
+}
+
+.loading-indicator.hidden {
+  display: none !important;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--system-line);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 13px;
+  color: var(--system);
+  font-style: italic;
+}
+
 .message {
   display: flex;
   flex-direction: column;
@@ -397,6 +430,7 @@ body {
   font-style: italic;
   text-align: center;
   padding: 10px 18px;
+  white-space: pre-wrap;
 }
 
 .composer {

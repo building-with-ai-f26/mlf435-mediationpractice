@@ -26,11 +26,11 @@
           <div class="field">
             <label for="topic-select">Situation</label>
             <select id="topic-select">
-              <option value="noise">Noise complaint</option>
-              <option value="cleaning">Cleaning dispute</option>
-              <option value="guest policy">Guest policy violation</option>
-              <option value="hygiene">Hygiene concern</option>
-              <option value="shared items">Shared items conflict</option>
+              <option value="noise">Noise Complaint</option>
+              <option value="cleaning">Cleaning Dispute</option>
+              <option value="guest policy">Guest Policy Violation</option>
+              <option value="hygiene">Hygiene Concern</option>
+              <option value="shared items">Shared Items Conflict</option>
             </select>
           </div>
 
@@ -72,6 +72,11 @@
             <button id="end-btn" class="btn btn-small">End & Debrief</button>
           </div>
         </header>
+
+        <div id="loading-indicator" class="loading-indicator hidden">
+          <span class="spinner"></span>
+          <span class="loading-text">Residents are thinking...</span>
+        </div>
 
         <div id="chat-log" class="chat-log"></div>
 
