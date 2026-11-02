@@ -2,7 +2,7 @@ const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "moonshotai/kimi-k3.1-pro",    name: "Kimi" },
+  { id: "deepseek/deepseek-v4.1-flash", name: "Kimi" },
   { id: "google/gemini-2.5-flash",     name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
@@ -151,24 +151,25 @@ function mediationPrompt(topic, difficulty, history, nextSpeaker, turnCount) {
 
   let pressure = "";
   if (turnCount >= 6) {
-    pressure = "\n\nIMPORTANT: This conversation has gone back and forth several times. You are now willing to accept a reasonable compromise. Show movement toward agreement, not more resistance.";
+    pressure = "\n\nCRITICAL: This is turn 6+. You MUST show willingness to agree to a compromise. Do not resist anymore.";
   } else if (turnCount >= 4) {
-    pressure = "\n\nIMPORTANT: Start showing openness to a compromise. Do not just repeat your previous position.";
+    pressure = "\n\nIMPORTANT: Start showing openness to compromise. Do not just repeat your position.";
   }
 
-  return `You are ${nextSpeaker} in a roommate conflict about ${topic}. Difficulty: ${difficulty}.
+  return `You are ${nextSpeaker}. Difficulty: ${difficulty}.
 
 CONVERSATION:
 ${transcript}${pressure}
 
 RULES:
-- Respond in 2-4 sentences only.
+- MAXIMUM 2 paragraphs.
+- MAXIMUM 4 sentences total.
+- If you write more than 2 paragraphs, your response will be cut off.
 - Address the RA directly.
 - Stay in character (Alex: needs quiet / Jordan: needs freedom).
-- If the RA proposed a specific compromise, respond to it directly.
-- Do NOT use em dashes. Use periods, commas, or colons only.
-- Do NOT resolve the conflict yourself.
-- Do NOT prefix with "${nextSpeaker}:".`;
+- Do NOT use em dashes. Use periods or commas only.
+- Do NOT prefix with "${nextSpeaker}:".
+- Respond naturally in 2-4 sentences only.`;
 }
 
 function graderPrompt(modelName, topic, difficulty, history) {
@@ -280,7 +281,7 @@ async function call(model, messages) {
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, temperature: 0.8, max_tokens: 300 }),
+    body: JSON.stringify({ model, messages, temperature: 0.8, max_tokens: 200 }),
   });
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
@@ -293,22 +294,31 @@ async function call(model, messages) {
    ============================================================ */
 
 function sanitize(text) {
-  // Replace em dash, en dash, curly quotes with plain equivalents
   return text
-    .replace(/[\u2014\u2013]/g, " - ")   // em dash, en dash → " - "
-    .replace(/[\u2018\u2019]/g, "'")     // curly single quotes
-    .replace(/[\u201C\u201D]/g, '"')     // curly double quotes
-    .replace(/[\u2026]/g, "...")          // ellipsis
-    .replace(/\n{3,}/g, "\n\n")          // max 2 newlines
+    .replace(/[\u2014\u2013]/g, " - ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2026]/g, "...")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function enforce2Paragraphs(text) {
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
+  if (paragraphs.length <= 2) return text;
+  // Merge all middle paragraphs into paragraph 2
+  const first = paragraphs[0];
+  const rest = paragraphs.slice(1).join(" ");
+  return first + "\n\n" + rest;
 }
 
 function cleanResponse(raw) {
   let t = raw;
-  // Strip accidental Name: prefix
   const m = t.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
   if (m) t = m[1];
-  return sanitize(t);
+  t = sanitize(t);
+  t = enforce2Paragraphs(t);
+  return t;
 }
 
 function determineNextSpeaker(raText, expectedNext) {
@@ -321,13 +331,25 @@ function determineNextSpeaker(raText, expectedNext) {
 }
 
 function checkAutoEnd(cleanText, speaker) {
-  const agreeWords = ["agree", "deal", "works for me", "sounds good", "fair enough", "okay then", "fine then", "that works", "i'm good with", "let's do", "i can try", "i'll try", "i will try"];
+  const agreeWords = [
+    "agree", "deal", "works for me", "sounds good", "fair enough",
+    "okay then", "fine then", "that works", "i'm good with", "let's do",
+    "i can try", "i'll try", "i will try", "willing to try", "open to trying",
+    "fair compromise", "sounds like a fair", "give this a shot", "let's give",
+    "i'm on board", "works for both", "that works for me", "happy with",
+  ];
   const lower = cleanText.toLowerCase();
-  if (agreeWords.some(w => lower.includes(w))) {
+  const matched = agreeWords.find(w => lower.includes(w));
+  if (matched) {
+    console.log(`[AutoEnd] ${speaker} agreed via phrase: "${matched}"`);
     if (speaker === "Alex") session.alexAgreed = true;
     if (speaker === "Jordan") session.jordanAgreed = true;
-    if (session.alexAgreed && session.jordanAgreed) return true;
+    if (session.alexAgreed && session.jordanAgreed) {
+      console.log("[AutoEnd] BOTH agreed! Triggering end suggestion.");
+      return true;
+    }
   }
+  console.log(`[AutoEnd] ${speaker} did NOT agree. alex=${session.alexAgreed}, jordan=${session.jordanAgreed}`);
   return false;
 }
 

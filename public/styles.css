@@ -1,6 +1,6 @@
-/* Design Read: product-ui · college RA trainees · calm, professional, focused
+  /* Design Read: product-ui · college RA trainees · calm, professional, focused
    VARIANCE 3 / MOTION 2 / DENSITY 6
-   Contextual anchor: residence hall duty desk — institutional warmth */
+   Contextual anchor: residence hall duty desk */
 
 :root {
   --paper: #faf7f2;
@@ -381,6 +381,7 @@ body {
   font-size: 15px;
   line-height: 1.55;
   border: 1px solid;
+  white-space: pre-wrap;
 }
 
 .message.alex {
