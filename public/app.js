@@ -2,7 +2,7 @@ const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "anthropic/claude-haiku-5.5", name: "Claude" },
+  { id: "anthropic/claude-fable-5.1", name: "Claude" },
   { id: "google/gemini-2.5-flash",     name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
