@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>[Your Product Name] · Building with AI (Fall 2026)</title>
+  <title>RA Practice Scenarios · Building with AI (Fall 2026)</title>
 
   <!-- Week 1: create your PostHog account only.
        Build 2: paste your project's current PostHog web snippet here,
@@ -144,8 +144,8 @@
     <!-- HERO / PRODUCT PITCH -->
     <header>
       <span class="eyebrow">NYU Stern · Building with AI · Fall 2026</span>
-      <h1>[Your Product Name]</h1>
-      <p class="tagline">[One clear sentence: Who is this for, and what painful job does it do for them?]</p>
+      <h1>RA Practice Scenarios</h1>
+      <p class="tagline">A practice tool for Resident Assistants that lets them mediate simulated roommate conflicts with AI roommates, alone and on demand.</p>
       <div class="cta-row">
         <a class="btn" href="#live-demo" onclick="window.posthog && posthog.capture('clicked_try_product')">See the Product →</a>
         <a class="btn btn-secondary" href="#prd">Read the Living PRD</a>
@@ -157,11 +157,11 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> [Build 1: local prototype / Builds 2–4: local app / Build 5: cloud app]<br />
-        <strong>Demo:</strong> [Add a screenshot or GIF now; add the live cloud app URL in Build 5.]
+        <strong>Current Status:</strong> Build 1: local prototype<br />
+        <strong>Demo:</strong> Screenshot coming after the first working prototype.
       </p>
       <p class="meta">
-        Ask your coding agent to embed a screenshot or GIF of your local prototype for Build 1. Keep this evidence current, then add your cloud app link and two-minute video in Build 5.
+        Keep this evidence current, then add your cloud app link and two-minute video in Build 5.
       </p>
     </section>
 
@@ -171,31 +171,33 @@
       <p class="meta">Updated every week as we test with real users and learn what works.</p>
 
       <h3>1. Target User & The Job to Be Done</h3>
-      <p><strong>Who is this for?</strong> [Name a specific, reachable person or role you have direct access to.]</p>
-      <p><strong>The painful "Before" workflow:</strong> [How do they do this today, and why is it slow, manual, or broken?]</p>
-      <p><strong>The "After" workflow with this product:</strong> [What does your tool do for them in one sitting?]</p>
+      <p><strong>Who is this for?</strong> A current Resident Assistant on my Housing Team who I can test with in person.</p>
+      <p><strong>The painful "Before" workflow:</strong> RAs get one human role play during training. Many feel unprepared the first time they have to mediate a real roommate conflict, and they cannot practice again on their own.</p>
+      <p><strong>The "After" workflow with this product:</strong> An RA can practice a roommate mediation any time. They pick a conflict topic and a difficulty, then mediate between two AI roommates who disagree, speaking out loud or typing, and get a short debrief.</p>
 
       <h3>2. Scope & Explicit Non-Goals</h3>
       <ul>
-        <li><strong>In Scope (Core Workflow):</strong> [The 1 main workflow this product does reliably]</li>
-        <li><strong>Out of Scope #1:</strong> [Feature you are deliberately NOT building in 6 weeks]</li>
-        <li><strong>Out of Scope #2:</strong> [Feature you are deliberately NOT building in 6 weeks]</li>
-        <li><strong>Out of Scope #3:</strong> [Feature you are deliberately NOT building in 6 weeks]</li>
+        <li><strong>In Scope (Core Workflow):</strong> The RA picks a topic (cleaning, guest policy, hygiene, noise, shared items) and a difficulty (easy, medium, hard). Two AI roommates with distinct personalities and opposing positions begin the conflict. The RA mediates by voice using the browser microphone, with a typed-text fallback if voice fails. The roommates answer in turn by name. The RA ends the session and sees a short debrief: what they did well, what they missed, and one thing to try next time.</li>
+        <li><strong>Out of Scope #1:</strong> The other scenarios (Boundary Setting, Difficult Parent, Resident Disengagement, Bias Incident, Party with Alcohol, Drug Use, Depression and Suicidal Ideation, Alcohol Intoxication, Sitting with Discomfort). Roommate Conflict only for now.</li>
+        <li><strong>Out of Scope #2:</strong> Real-time listening and live coaching prompts during a real mediation. That is the long-term vision, not v1.</li>
+        <li><strong>Out of Scope #3:</strong> Accounts, saved transcripts, and public hosting of the app. The prototype runs locally on my computer.</li>
       </ul>
 
       <h3>3. How It Works Under the Hood & Riskiest Assumption (Week 2+)</h3>
-      <p><strong>Riskiest Assumption:</strong> [What is the #1 technical or user risk that could sink this product?]</p>
-      <p><strong>Simple Architecture:</strong> [User Input] → [Your App / Server] → [AI Model / Tool] → [Output]</p>
+      <p><strong>Riskiest Assumption:</strong> An LLM can realistically simulate two opposing roommates who stay in character, respond to the RA in turn, and provide a useful debrief. If the AI is repetitive, breaks character, or gives vague feedback, the tool will not feel like real practice.</p>
+      <p><strong>Simple Architecture:</strong> Browser (microphone + text input) → Local frontend calls OpenRouter (Kimi or DeepSeek) via local proxy or direct fetch with key from .env → AI roommates respond in turn → Session ends, LLM generates debrief</p>
 
-      <h3>4. Unit Economics & Analytics Snapshot (Updated Weekly)</h3>
+      <h3>4. Technical Notes</h3>
+      <p>The prototype runs locally and calls OpenRouter (Kimi or DeepSeek). The API key lives only in a local <code>.env</code> file that is gitignored and is never committed. The repo is public. If the app is ever hosted publicly, the key will need to sit behind a small proxy, not in the site's code.</p>
+      <h3>5. Unit Economics & Analytics Snapshot (Updated Weekly)</h3>
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">[Record actual spend]</div>
+          <div class="stat-value">$0.00</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
-          <div class="stat-value">[Not yet estimated]</div>
+          <div class="stat-value">TBD</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">User Evidence (Analytics from Build 2)</div>
@@ -212,6 +214,18 @@
     <section id="build-log">
       <h2>Weekly Build Log</h2>
       <p class="meta">Build on at least two separate days each week outside class, including the November 3 break. Push commits and log actual progress, failures, PRD changes, costs, and hours here. All build deadlines are noon, New York time.</p>
+
+      <div class="log-entry">
+        <h3>2026-11-01 · PRD v1 and Product Page update</h3>
+        <ul>
+          <li><strong>What works:</strong> PRD v1 written and Product Page updated. Nothing built yet.</li>
+          <li><strong>What I learned:</strong> GitHub Pages cannot keep secrets, so the key stays local.</li>
+          <li><strong>What broke or changed:</strong> Switched from a root PRD.md to the template's docs/index.html.</li>
+          <li><strong>Cost:</strong> $0.00</li>
+          <li><strong>Hours:</strong> TBD</li>
+          <li><strong>Next:</strong> Build the text-only mediation loop with one topic and one difficulty.</li>
+        </ul>
+      </div>
 
       <div class="log-entry">
         <h3>Build 1 · Intent.md & Throwaway Prototype (Due Nov 9)</h3>
