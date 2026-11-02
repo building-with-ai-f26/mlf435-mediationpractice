@@ -6,7 +6,7 @@
 // ============================================================
 
 const API_URL = "/api/chat";
-const MODEL = "moonshotai/kimi-k3.1-pro";
+const MODEL = "deepseek/deepseek-chat";
 
 // DOM elements
 const setupSection = document.getElementById("setup");
