@@ -3,22 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RA Practice Scenarios</title>
+  <title>Resident Assistant Practice Scenarios</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>RA Practice Scenarios</h1>
-      <p class="tagline">Practice mediating a roommate conflict</p>
+      <h1>Resident Assistant Practice Scenarios</h1>
+      <p class="tagline">Practice Various Commonplace RA Situations</p>
     </header>
 
-    <!-- SETUP: Topic and difficulty -->
+    <!-- SETUP -->
     <section id="setup">
       <h2>Start a Practice Session</h2>
       <div class="form-row">
-        <label for="topic-input">Topic:</label>
-        <input type="text" id="topic-input" value="noise" placeholder="e.g. noise, cleaning, guests..." />
+        <label for="ra-name">Your Name:</label>
+        <input type="text" id="ra-name" placeholder="Enter your name" />
+      </div>
+      <div class="form-row">
+        <label for="topic-select">Situation:</label>
+        <select id="topic-select">
+          <option value="noise">Noise</option>
+          <option value="cleaning">Cleaning</option>
+          <option value="guest policy">Guest Policy</option>
+          <option value="hygiene">Hygiene</option>
+          <option value="shared items">Shared Items</option>
+        </select>
       </div>
       <div class="form-row">
         <label for="difficulty">Difficulty:</label>
@@ -31,15 +41,20 @@
       <button id="start-btn" class="btn btn-primary">Start Session</button>
     </section>
 
-    <!-- CHAT: Mediation in progress -->
+    <!-- CHAT -->
     <section id="chat-section" class="hidden">
       <div class="chat-header">
         <h2>Roommate Mediation</h2>
         <div class="meta">
-          Topic: <span id="topic-display">noise</span> ·
+          RA: <span id="ra-name-display">You</span> ·
+          Situation: <span id="topic-display">noise</span> ·
           Difficulty: <span id="difficulty-display">easy</span>
         </div>
       </div>
+
+      <!-- CONTEXT CARDS -->
+      <div id="context-cards" class="context-cards"></div>
+
       <div id="chat-log" class="chat-log"></div>
       <div class="chat-input-row">
         <input type="text" id="ra-input" placeholder="Type your response as the RA..." autocomplete="off" />
@@ -50,10 +65,21 @@
       </div>
     </section>
 
-    <!-- DEBRIEF: Session summary -->
+    <!-- DEBRIEF -->
     <section id="debrief-section" class="hidden">
       <h2>Debrief</h2>
-      <div id="debrief-content" class="debrief-content"></div>
+
+      <div class="debrief-meta">
+        <p>RA: <span id="debrief-ra-name"></span> · Situation: <span id="debrief-topic"></span> · Difficulty: <span id="debrief-difficulty"></span></p>
+      </div>
+
+      <div id="individual-graders" class="graders-section"></div>
+
+      <div class="consolidated-section">
+        <h3>Consolidated Feedback</h3>
+        <div id="consolidated-debrief" class="debrief-content"></div>
+      </div>
+
       <button id="restart-btn" class="btn btn-primary">Start New Session</button>
     </section>
   </div>
