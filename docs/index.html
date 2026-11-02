@@ -189,7 +189,7 @@
 
       <h3>4. Technical Notes</h3>
       <p>The prototype runs locally and calls OpenRouter (Kimi or DeepSeek). The API key lives only in a local <code>.env</code> file that is gitignored and is never committed. The repo is public. If the app is ever hosted publicly, the key will need to sit behind a small proxy, not in the site's code.</p>
-      <h3>5. Unit Economics & Analytics Snapshot (Updated Weekly)</h3>
+      <h3>5. Unit Economics & Analytics Snapshot</h3>
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
@@ -216,24 +216,12 @@
       <p class="meta">Build on at least two separate days each week outside class, including the November 3 break. Push commits and log actual progress, failures, PRD changes, costs, and hours here. All build deadlines are noon, New York time.</p>
 
       <div class="log-entry">
-        <h3>2026-11-01 · PRD v1 and Product Page update</h3>
-        <ul>
-          <li><strong>What works:</strong> PRD v1 written and Product Page updated. Nothing built yet.</li>
-          <li><strong>What I learned:</strong> GitHub Pages cannot keep secrets, so the key stays local.</li>
-          <li><strong>What broke or changed:</strong> Switched from a root PRD.md to the template's docs/index.html.</li>
-          <li><strong>Cost:</strong> $0.00</li>
-          <li><strong>Hours:</strong> TBD</li>
-          <li><strong>Next:</strong> Build the text-only mediation loop with one topic and one difficulty.</li>
-        </ul>
-      </div>
-
-      <div class="log-entry">
         <h3>Build 1 · Intent.md & Throwaway Prototype (Due Nov 9)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [What you actually built; link your local prototype screenshot or GIF above.]</li>
-          <li><strong>Things learned with AI:</strong> [What you learned from AI practice and Terminus Episodes 1 and 2.]</li>
-          <li><strong>What broke / changed in PRD:</strong> [Fill in]</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>What shipped:</strong> Text-only mediation prototype with 5 roommate conflict topics. Node.js proxy server. AI residents (Alex/Jordan) introduce themselves and alternate responses. 3-model AI grader debrief (DeepSeek, Kimi, Gemini) with consolidated feedback. Context cards showing resident profiles. Anti-cliche frontend design (no em dashes, no fade-ups, warm neutral palette). GitHub Pages Product Page with PRD v1.</li>
+          <li><strong>Things learned with AI:</strong> Prompt engineering for consistent character voice. OpenRouter model selection (DeepSeek Chat for clean non-reasoning output). The importance of explicit "no em dash" and "focus on mediator" instructions in prompts. Cors proxy pattern for API key security.</li>
+          <li><strong>What broke / changed in PRD:</strong> Switched from voice-primary to text-primary for v1 (voice deferred to Build 2). Added 3-AI grader pipeline after testing showed single-model bias. Added Spec Kit for structured development tracking. Removed dead Gemini model (2.0-flash-001 unavailable, swapped to 2.5-flash).</li>
+          <li><strong>Cost & time this week:</strong> $0.00 (within free tiers) · TBD hours</li>
         </ul>
       </div>
 

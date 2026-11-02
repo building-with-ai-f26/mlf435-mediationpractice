@@ -3,7 +3,7 @@ const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat",        name: "DeepSeek" },
   { id: "moonshotai/kimi-k3.1-pro",      name: "Kimi" },
-  { id: "google/gemini-2.0-flash-001",   name: "Gemini" },
+  { id: "google/gemini-2.5-flash",       name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
 
@@ -40,6 +40,7 @@ let session = {
   messages: [],
   turnHistory: [],
   active: false,
+  nextSpeaker: "Alex",
 };
 
 /* ============================================================
@@ -121,7 +122,7 @@ The issue: ${profile.alex.stance}
 This is your FIRST message to the RA. Introduce yourself (name, year, major in one sentence). Then explain your frustration in 2-3 sentences. Be emotional but rational. End with one question or request.
 
 Difficulty: ${difficulty} (you are ${d}).
-Format: "**Alex:**" then response. Do NOT mention Jordan by name yet.`;
+Do NOT include "**Alex:**" at the start. Do NOT mention Jordan by name yet.`;
 }
 
 function jordanPrompt(topic, difficulty, profile, alexMsg) {
@@ -135,23 +136,21 @@ Alex just said: "${alexMsg}"
 The RA is now asking for your side. This is your FIRST message. Introduce yourself (name, year, major in one sentence). Then give your perspective in 2-3 sentences. Push back on Alex's version without being hostile. End with how you feel.
 
 Difficulty: ${difficulty} (you are ${d}).
-Format: "**Jordan:**" then response.`;
+Do NOT include "**Jordan:**" at the start.`;
 }
 
-function mediationPrompt(topic, difficulty, history) {
+function mediationPrompt(topic, difficulty, history, nextSpeaker) {
   const d = { easy: "cooperative", medium: "frustrated", hard: "very upset and resistant" }[difficulty];
-  const last = history[history.length - 1]?.sender || "Jordan";
-  const next = last === "Alex" ? "Jordan" : "Alex";
 
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
 
-  return `You are ${next} in a roommate conflict about ${topic}.
+  return `You are ${nextSpeaker} in a roommate conflict about ${topic}.
 Difficulty: ${difficulty} (you are ${d}).
 
 CONVERSATION:
 ${transcript}
 
-The RA just spoke. Respond as ${next} in 2-4 sentences.
+The RA just spoke. Respond as ${nextSpeaker} in 2-4 sentences.
 Rules:
 - Address the RA directly
 - Stay in your character (Alex: structured, needs quiet / Jordan: social, needs freedom)
@@ -159,14 +158,16 @@ Rules:
 - If RA was unhelpful, push back
 - Do NOT resolve the conflict yourself
 
-Format: "**${next}:**" then response.`;
+Do NOT include "**${nextSpeaker}:**" at the start. Speak naturally.`;
 }
 
 function graderPrompt(modelName, topic, difficulty, history) {
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-  return `Grade this RA mediation practice. Grader: ${modelName}.
+  return `You are an experienced RA supervisor grading a mediation practice session.
 
-Situation: ${topic} · Difficulty: ${difficulty}
+IMPORTANT: Grade the MEDIATOR (the RA), NOT the residents. Focus on how well the RA facilitated the conversation, listened, validated feelings, and proposed solutions.
+
+Situation: ${topic} / Difficulty: ${difficulty}
 
 TRANSCRIPT:
 ${transcript}
@@ -174,13 +175,13 @@ ${transcript}
 Respond ONLY in this format:
 SCORE: [number]/100
 STRENGTHS:
-- [specific strength]
-- [specific strength]
+- [specific strength of the MEDIATOR]
+- [specific strength of the MEDIATOR]
 GAPS:
-- [specific gap]
-- [specific gap]
+- [specific gap of the MEDIATOR]
+- [specific gap of the MEDIATOR]
 
-No em dashes. Plain language.`;
+No em dashes. Plain language. Focus on the MEDIATOR'S performance, not the residents.`;
 }
 
 function consolidatorPrompt(gradings, history) {
@@ -205,13 +206,14 @@ WHAT YOU MISSED:
 - [specific gap, with what to do instead]
 
 ONE THING TO TRY NEXT TIME:
-[One concrete technique]
+- [One concrete technique for the MEDIATOR]
 
 Rules:
-- No em dashes anywhere. Use periods, commas, colons, or hyphens.
+- NO em dashes. Use periods, commas, colons, or hyphens only.
 - Concise and action-oriented.
 - Reference specific transcript moments.
-- Do not repeat the same point.`;
+- Do not repeat the same point.
+- ALL feedback must be about the MEDIATOR'S performance, not the residents.`;
 }
 
 /* ============================================================
@@ -267,9 +269,10 @@ async function call(model, messages) {
   return (m.content || m.reasoning || "").trim();
 }
 
-function parseName(raw) {
-  const m = raw.match(/^\*\*?(\w+)\*\*?[\s:]+(.+)$/s);
-  return m ? { name: m[1], text: m[2].trim() } : { name: "Resident", text: raw };
+function cleanResponse(raw, expectedName) {
+  // Remove any accidental **Name:** prefix
+  const m = raw.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
+  return m ? m[1].trim() : raw.trim();
 }
 
 /* ============================================================
@@ -283,6 +286,7 @@ async function startSession() {
   session.messages = [];
   session.turnHistory = [];
   session.active = true;
+  session.nextSpeaker = "Alex";
 
   DOM.raNameDisplay.textContent = session.raName;
   DOM.topicBadge.textContent = session.topic;
@@ -304,16 +308,18 @@ async function startSession() {
   try {
     // Alex introduces
     const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
-    const alex = parseName(alexRaw);
-    DOM.chatLog.appendChild(msgEl("Alex", alex.text, "alex"));
-    session.turnHistory.push({ sender: "Alex", text: alex.text });
+    const alexText = cleanResponse(alexRaw, "Alex");
+    DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
+    session.turnHistory.push({ sender: "Alex", text: alexText });
+    session.nextSpeaker = "Jordan";
     scrollToBottom();
 
     // Jordan introduces
-    const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alex.text) }]);
-    const jordan = parseName(jordanRaw);
-    DOM.chatLog.appendChild(msgEl("Jordan", jordan.text, "jordan"));
-    session.turnHistory.push({ sender: "Jordan", text: jordan.text });
+    const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
+    const jordanText = cleanResponse(jordanRaw, "Jordan");
+    DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
+    session.turnHistory.push({ sender: "Jordan", text: jordanText });
+    session.nextSpeaker = "Alex";
     scrollToBottom();
 
     DOM.chatLog.appendChild(sysEl("Both residents have shared their sides. Begin mediating."));
@@ -335,11 +341,13 @@ async function send() {
   scrollToBottom();
 
   try {
-    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory) }]);
-    const p = parseName(raw);
-    const type = p.name.toLowerCase().includes("alex") ? "alex" : p.name.toLowerCase().includes("jordan") ? "jordan" : "jordan";
-    DOM.chatLog.appendChild(msgEl(p.name, p.text, type));
-    session.turnHistory.push({ sender: p.name, text: p.text });
+    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker) }]);
+    const cleanText = cleanResponse(raw, session.nextSpeaker);
+    const speaker = session.nextSpeaker;
+    const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
+    DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
+    session.turnHistory.push({ sender: speaker, text: cleanText });
+    session.nextSpeaker = speaker === "Alex" ? "Jordan" : "Alex";
     setInput(true);
     scrollToBottom();
   } catch (err) {
