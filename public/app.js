@@ -2,7 +2,7 @@ const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "deepseek/deepseek-v4.1-flash", name: "Kimi" },
+  { id: "deepseek/deepseek-v4.1-flash", name: "Kimi-Flash" },
   { id: "google/gemini-2.5-flash",     name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
@@ -331,25 +331,30 @@ function determineNextSpeaker(raText, expectedNext) {
 }
 
 function checkAutoEnd(cleanText, speaker) {
-  const agreeWords = [
-    "agree", "deal", "works for me", "sounds good", "fair enough",
-    "okay then", "fine then", "that works", "i'm good with", "let's do",
-    "i can try", "i'll try", "i will try", "willing to try", "open to trying",
-    "fair compromise", "sounds like a fair", "give this a shot", "let's give",
-    "i'm on board", "works for both", "that works for me", "happy with",
+  // Only count as agreement if resident CONFIRMS a specific plan, not just mentions "agree" loosely
+  const confirmPatterns = [
+    /yes,? i('|\s)?ll? (do|try|use)/i,
+    /(that|this) works for me/i,
+    /i('|\s)?m (good|happy|fine) with (that|this|it)/i,
+    /(let|can we) (commit|start|try|go|begin)/i,
+    /i agree (with|to) (this|that|the|your)/i,
+    /that (sounds|seems) (fair|reasonable|good)/i,
+    /i(\'m|\s+willing|\s+going)\s+to\s+(try|use|do|follow)/i,
+    /sounds (good|fair|reasonable)/i,
+    /deal,?\s*(we|let)/i,
   ];
   const lower = cleanText.toLowerCase();
-  const matched = agreeWords.find(w => lower.includes(w));
+  const matched = confirmPatterns.find(p => p.test(cleanText));
   if (matched) {
-    console.log(`[AutoEnd] ${speaker} agreed via phrase: "${matched}"`);
+    console.log(`[AutoEnd] ${speaker} CONFIRMED via pattern: "${matched}"`);
     if (speaker === "Alex") session.alexAgreed = true;
     if (speaker === "Jordan") session.jordanAgreed = true;
     if (session.alexAgreed && session.jordanAgreed) {
-      console.log("[AutoEnd] BOTH agreed! Triggering end suggestion.");
+      console.log("[AutoEnd] BOTH confirmed! Suggesting end.");
       return true;
     }
   }
-  console.log(`[AutoEnd] ${speaker} did NOT agree. alex=${session.alexAgreed}, jordan=${session.jordanAgreed}`);
+  console.log(`[AutoEnd] ${speaker} did NOT confirm. alex=${session.alexAgreed}, jordan=${session.jordanAgreed}`);
   return false;
 }
 
@@ -580,9 +585,11 @@ function renderConsolidated(raw) {
       sections.push(cur);
     } else if ((t.startsWith("- ") || t.startsWith("* ")) && cur) {
       cur.items.push(t.slice(2));
-    } else if (cur && cur.type === "next" && cur.items.length === 0) {
+    } else if (cur && cur.items.length === 0) {
+      // First line of a section that doesn't start with dash (e.g., ONE THING body)
       cur.items.push(t);
     } else if (cur) {
+      // Continuation of previous bullet or text block
       cur.items[cur.items.length - 1] += " " + t;
     }
   }
@@ -593,12 +600,18 @@ function renderConsolidated(raw) {
       html += `<div class="score-display"><div class="score-number">${s.value}/100</div><div class="score-label">Overall Score</div></div>`;
     } else if (s.type === "next") {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
-    } else {
+    } else if (s.items.length > 0) {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
+    } else {
+      html += `<div class="section-block"><h3>${s.title}</h3><p>${esc(s.title)} section empty</p></div>`;
     }
   }
 
-  DOM.consolidated.innerHTML = html || `<div class="section-block">${esc(raw).replace(/\n/g, "<br>")}</div>`;
+  if (!html) {
+    html = `<div class="section-block"><pre style="font-size:12px;white-space:pre-wrap">${esc(raw)}</pre></div>`;
+  }
+
+  DOM.consolidated.innerHTML = html;
 }
 
 function esc(text) {
