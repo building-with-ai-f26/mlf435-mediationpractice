@@ -1,3 +1,5 @@
+import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent } from "./logic.js";
+
 const API_URL = "/api/chat";
 const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
@@ -6,6 +8,9 @@ const GRADER_MODELS = [
   { id: "google/gemini-2.5-flash",     name: "Gemini" },
 ];
 const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
+const TOKENS_RESIDENT = 150;
+const TOKENS_GRADER = 600;
+const TOKENS_CONSOLIDATOR = 700;
 
 const HINTS = [
   "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
@@ -21,13 +26,6 @@ const HINTS = [
 const $ = id => document.getElementById(id);
 
 const DOM = {
-  setup, chatView, debriefView,
-  raNameInput, topicSelect, difficultySelect,
-  startBtn, raNameDisplay, topicBadge, difficultyBadge,
-  residentCards, chatLog, raInput, sendBtn, endBtn,
-  debriefRaName, debriefTopic, debriefDifficulty,
-  graderCards, consolidated, restartBtn,
-} = {
   setup: $("setup"), chatView: $("chat-view"), debriefView: $("debrief-view"),
   raNameInput: $("ra-name"), topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
   startBtn: $("start-btn"), raNameDisplay: $("ra-name-display"),
@@ -42,7 +40,7 @@ const DOM = {
 
 let session = {
   raName: "", topic: "noise", difficulty: "medium",
-  turnHistory: [], active: false, nextSpeaker: "Alex",
+  turnHistory: [], active: false, lastSpeaker: "Jordan",
   alexAgreed: false, jordanAgreed: false, turnCount: 0,
 };
 
@@ -143,33 +141,6 @@ RULES:
 - Do NOT write more than 4 sentences total.
 - Do NOT write one long paragraph.
 - Do NOT prefix with "Jordan:".`;
-}
-
-function mediationPrompt(topic, difficulty, history, nextSpeaker, turnCount) {
-  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset and resistant" }[difficulty];
-  const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-
-  let pressure = "";
-  if (turnCount >= 6) {
-    pressure = "\n\nCRITICAL: This is turn 6+. You MUST show willingness to agree to a compromise. Do not resist anymore.";
-  } else if (turnCount >= 4) {
-    pressure = "\n\nIMPORTANT: Start showing openness to compromise. Do not just repeat your position.";
-  }
-
-  return `You are ${nextSpeaker}. Difficulty: ${difficulty}.
-
-CONVERSATION:
-${transcript}${pressure}
-
-RULES:
-- MAXIMUM 2 paragraphs.
-- MAXIMUM 4 sentences total.
-- If you write more than 2 paragraphs, your response will be cut off.
-- Address the RA directly.
-- Stay in character (Alex: needs quiet / Jordan: needs freedom).
-- Do NOT use em dashes. Use periods or commas only.
-- Do NOT prefix with "${nextSpeaker}:".
-- Respond naturally in 2-4 sentences only.`;
 }
 
 function graderPrompt(modelName, topic, difficulty, history) {
@@ -277,16 +248,18 @@ function setInput(enabled) {
    API
    ============================================================ */
 
-async function call(model, messages) {
+async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, temperature: 0.8, max_tokens: 200 }),
+    body: JSON.stringify(buildRequestBody(model, messages, maxTokens)),
   });
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
-  const m = data.choices[0].message;
-  return (m.content || m.reasoning || "").trim();
+  if (data.choices?.[0]?.finish_reason === "length") {
+    console.warn(`[call] Model ${model} response truncated (finish_reason: length)`);
+  }
+  return extractContent(data);
 }
 
 /* ============================================================
@@ -319,15 +292,6 @@ function cleanResponse(raw) {
   t = sanitize(t);
   t = enforce2Paragraphs(t);
   return t;
-}
-
-function determineNextSpeaker(raText, expectedNext) {
-  const lower = raText.toLowerCase();
-  const alexWords = ["\balex\b", "\balexandra\b"];
-  const jordanWords = ["\bjordan\b"];
-  if (alexWords.some(w => new RegExp(w, "i").test(raText))) return "Alex";
-  if (jordanWords.some(w => new RegExp(w, "i").test(raText))) return "Jordan";
-  return expectedNext;
 }
 
 function checkAutoEnd(cleanText, speaker) {
@@ -380,7 +344,7 @@ async function startSession() {
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
   session.active = true;
-  session.nextSpeaker = "Alex";
+  session.lastSpeaker = "Jordan";
   session.alexAgreed = false;
   session.jordanAgreed = false;
   session.turnCount = 0;
@@ -397,6 +361,7 @@ async function startSession() {
   DOM.consolidated.innerHTML = "";
 
   const profiles = getProfiles(session.topic, session.difficulty);
+  session.profiles = profiles;
   renderCards(profiles);
 
   DOM.chatLog.appendChild(sysEl("Session started."));
@@ -411,7 +376,6 @@ async function startSession() {
     console.log("[Alex clean]", alexText);
     DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
     session.turnHistory.push({ sender: "Alex", text: alexText });
-    session.nextSpeaker = "Jordan";
     scrollToBottom();
 
     showLoading();
@@ -422,7 +386,7 @@ async function startSession() {
     console.log("[Jordan clean]", jordanText);
     DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
     session.turnHistory.push({ sender: "Jordan", text: jordanText });
-    session.nextSpeaker = "Alex";
+    session.lastSpeaker = "Jordan";
     scrollToBottom();
 
     DOM.chatLog.appendChild(sysEl("Both residents have shared their sides. Begin mediating."));
@@ -438,25 +402,25 @@ async function send() {
   const text = DOM.raInput.value.trim();
   if (!text || !session.active) return;
 
-  DOM.chatLog.appendChild(msgEl(session.raName, text, "ra"));
-  session.turnHistory.push({ sender: session.raName, text });
+  const raEntry = { sender: session.raName, text };
+  const raEl = msgEl(session.raName, text, "ra");
+  DOM.chatLog.appendChild(raEl);
   DOM.raInput.value = "";
   setInput(false);
   showLoading();
   scrollToBottom();
 
-  session.turnCount++;
-  const expectedNext = session.nextSpeaker;
-  console.log("[Routing] RA said:", text, "| expected:", expectedNext);
+  const turn = session.turnCount + 1;
+  const speaker = getResponder(text, session.lastSpeaker);
+  console.log("[Routing] RA said:", text, "| responder:", speaker);
 
   try {
-    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, session.turnHistory, session.nextSpeaker, session.turnCount) }]);
+    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry], speaker, turn, session.profiles) }]);
     hideLoading();
     const cleanText = cleanResponse(raw);
     console.log("[Response raw]", raw);
     console.log("[Response clean]", cleanText);
 
-    const speaker = session.nextSpeaker;
     const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
 
     if (checkAutoEnd(cleanText, speaker)) {
@@ -464,15 +428,14 @@ async function send() {
     }
 
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
-    session.turnHistory.push({ sender: speaker, text: cleanText });
-
-    const next = determineNextSpeaker(text, speaker === "Alex" ? "Jordan" : "Alex");
-    console.log("[Routing] Next speaker:", next);
-    session.nextSpeaker = next;
+    commitTurn(session, raEntry, speaker, cleanText);
     setInput(true);
     scrollToBottom();
   } catch (err) {
     hideLoading();
+    // Nothing was committed to the session, so only the screen and input need restoring.
+    raEl.remove();
+    DOM.raInput.value = text;
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
     setInput(true);
     console.error(err);
@@ -496,7 +459,7 @@ async function end() {
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }]);
+          const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }], TOKENS_GRADER);
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
           const parsed = parseGrading(raw, g.name);
           console.log(`[Grader ${g.name} PARSED]:`, parsed);
@@ -511,7 +474,7 @@ async function end() {
     renderGraderCards(results);
 
     DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Consolidating feedback...</div></div>';
-    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, session.turnHistory) }]);
+    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, session.turnHistory) }], TOKENS_CONSOLIDATOR);
     renderConsolidated(consolidatedRaw);
   } catch (err) {
     DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
