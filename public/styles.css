@@ -623,3 +623,13 @@ body {
   color: var(--muted);
   white-space: nowrap;
 }
+
+.demo-banner {
+  background: var(--system-bg);
+  color: var(--system);
+  border-bottom: 1px solid var(--system-line);
+  padding: var(--space-sm) var(--space-md);
+  text-align: center;
+  font-size: 0.9rem;
+}
+.demo-banner[hidden] { display: none; }

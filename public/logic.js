@@ -153,3 +153,10 @@ export function shouldShowAgreementNotice(session) {
   session.agreementNoticeShown = true;
   return true;
 }
+
+// Mock mode is on with ?mock=1, and always on for GitHub Pages (hostname ends in github.io),
+// where there is no server to proxy API calls.
+export function isMockMode(hostname, search) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "github.io" || host.endsWith(".github.io") || new URLSearchParams(search || "").get("mock") === "1";
+}

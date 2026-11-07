@@ -1,4 +1,4 @@
-import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
+import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
 import { mockResponse } from "./mock.js";
 
 const API_URL = "/api/chat";
@@ -14,8 +14,9 @@ const TOKENS_RESIDENT = 150;
 const TOKENS_GRADER = 600;
 const TOKENS_CONSOLIDATOR = 700;
 const MAX_TURNS = 10;
-// ?mock=1 serves canned replies and grades. No fetch, no API key, no cost.
-const MOCK = new URLSearchParams(location.search).get("mock") === "1";
+// ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
+const MOCK = isMockMode(location.hostname, location.search);
+if (MOCK) document.getElementById("demo-banner").hidden = false;
 
 const HINTS = [
   "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",

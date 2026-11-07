@@ -11,6 +11,7 @@
 - **Install dependencies:** `cp .env.example .env` then add your OpenRouter key. No `npm install` needed.
 - **Run locally:** `node server.mjs` → open `http://localhost:3000`
 - **Run offline (no API calls):** open `http://localhost:3000/?mock=1` (canned replies and grades)
+- **Sync the hosted demo:** `scripts/sync-demo.sh` (rebuilds `docs/demo/` from `public/` for GitHub Pages; run it and commit `docs/demo/` after any change in `public/`)
 - **Run deterministic tests:** `node --test tests/`
 - **Run model evals:** Manual end-to-end session + debrief verification
 

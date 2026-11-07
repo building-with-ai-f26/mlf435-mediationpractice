@@ -147,7 +147,7 @@
       <h1>RA Practice Scenarios</h1>
       <p class="tagline">A practice tool for Resident Assistants that lets them mediate simulated roommate conflicts with AI roommates, alone and on demand.</p>
       <div class="cta-row">
-        <a class="btn" href="#live-demo" onclick="window.posthog && posthog.capture('clicked_try_product')">See the Product →</a>
+        <a class="btn" href="demo/" onclick="window.posthog && posthog.capture('clicked_try_product')">See the Product →</a>
         <a class="btn btn-secondary" href="#prd">Read the Living PRD</a>
         <a class="btn btn-secondary" href="#build-log">Weekly Build Log</a>
       </div>
@@ -157,8 +157,8 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> Build 1: local prototype<br />
-        <strong>Demo:</strong> Local text-only mediation loop with context cards, turn-based chat, and 3-AI grader debrief.
+        <strong>Current Status:</strong> Build 1: local prototype, plus a hosted demo in scripted mode<br />
+        <strong>Demo:</strong> <a href="demo/">Open the demo</a>. It runs a full session with scripted roommate replies and a scripted debrief, so it needs no key and costs nothing. The live AI version runs locally for now.
       </p>
       <p>
         <img src="B1_Screenshot.png" alt="Build 1 Screenshot: RA Practice Scenarios chat interface" style="max-width: 100%; border-radius: 8px; border: 1px solid #e5e7eb;" />
@@ -196,7 +196,7 @@
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">$0.00</div>
+          <div class="stat-value">$11.12</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
@@ -221,10 +221,10 @@
       <div class="log-entry">
         <h3>Build 1 · Intent.md & Throwaway Prototype (Due Nov 9)</h3>
         <ul>
-          <li><strong>What shipped:</strong> Text-only mediation prototype with 5 roommate conflict topics. Node.js proxy server. AI residents (Alex/Jordan) introduce themselves and alternate responses. 3-model AI grader debrief (DeepSeek, Kimi, Gemini) with consolidated feedback. Context cards showing resident profiles. Anti-cliche frontend design (no em dashes, no fade-ups, warm neutral palette). GitHub Pages Product Page with PRD v1.</li>
-          <li><strong>Things learned with AI:</strong> Prompt engineering for consistent character voice. OpenRouter model selection (DeepSeek Chat for clean non-reasoning output). The importance of explicit "no em dash" and "focus on mediator" instructions in prompts. Cors proxy pattern for API key security.</li>
-          <li><strong>What broke / changed in PRD:</strong> Switched from voice-primary to text-primary for v1 (voice deferred to Build 2). Added 3-AI grader pipeline after testing showed single-model bias. Added Spec Kit for structured development tracking. Removed dead Gemini model (2.0-flash-001 unavailable, swapped to 2.5-flash).</li>
-          <li><strong>Cost & time this week:</strong> $0.00 (within free tiers) · TBD hours</li>
+          <li><strong>What shipped:</strong> A text-only mediation prototype: 5 roommate conflict topics, easy, medium and hard modes, two AI residents (Alex and Jordan) who answer in turn, context cards, and a 3-model AI grader debrief with consolidated feedback. This Product Page with PRD v1. After a bug review I also shipped: speaker routing fixed and covered by tests, residents that keep their topic and mood in replies, per-call token limits, an overall score computed in code, a single agreement notice, a hardened local server (model allowlist, origin check, request size cap), a 10-turn session cap, a mock mode, and synced docs. A hosted demo in mock mode is linked from "See the Product". 72 automated tests passing at final review.</li>
+          <li><strong>Things learned with AI:</strong> The question of which roommate speaks belongs in code, not in the model. The bug where the wrong roommate answered had two causes: the name check used "\balex\b" in a normal JavaScript string, where \b is a backspace character, so it never matched; and the speaker was chosen one turn late. I found both by reading the code and confirmed one by running it. I had the coding agent write a plan file first, then did one fix per fresh session to keep context small and costs low, using a cheaper model for routine edits and a stronger one for review. A second review caught bugs the first pass missed (the app failed when opened at 127.0.0.1, and the agreement message repeated). One bug an agent reported, a path traversal that could expose the API key, could not be reproduced when tested, so I kept the fix only as defense in depth. I also learned that OpenRouter checks your balance against the maximum output tokens a request could use, which caused 402 errors until I switched models and added credits.</li>
+          <li><strong>What broke / changed in PRD:</strong> Switched from voice-primary to text-primary for v1 (voice deferred). Added the 3-AI grader pipeline after testing showed single-model bias, and swapped a dead Gemini model for 2.5-flash. Building and testing the first version cost about $10 in one evening, which led to mock mode so interface testing costs $0. PRD changes: roommates now respond to the person addressed by name, and the hosted demo is scripted, since a live hosted version needs a proxy to protect the key. Known gaps: server and doc-sync tests were not written, the mock copies the real prompts instead of importing them, and [result of the real end-to-end run].</li>
+          <li><strong>Cost & time this week:</strong> $11.12 · [hours] hours. Commits on Nov 1, Nov 7.</li>
         </ul>
       </div>
 

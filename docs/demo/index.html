@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resident Assistant Practice Scenarios</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="demo-banner" class="demo-banner" role="status" hidden>Demo mode: scripted responses, no live AI.</div>
+  <div class="app">
+
+    <!-- SETUP -->
+    <main id="setup" class="setup-view">
+      <div class="setup-card">
+        <header class="setup-header">
+          <h1>Resident Assistant Practice Scenarios</h1>
+          <p>Practice mediating conflicts with AI residents</p>
+        </header>
+
+        <div class="form-stack">
+          <div class="field">
+            <label for="ra-name">Your name</label>
+            <input type="text" id="ra-name" placeholder="Enter your name" />
+          </div>
+
+          <div class="field">
+            <label for="topic-select">Situation</label>
+            <select id="topic-select">
+              <option value="noise">Noise Complaint</option>
+              <option value="cleaning">Cleaning Dispute</option>
+              <option value="guest policy">Guest Policy Violation</option>
+              <option value="hygiene">Hygiene Concern</option>
+              <option value="shared items">Shared Items Conflict</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty">
+              <option value="easy">Easy: Cooperative Residents</option>
+              <option value="medium" selected>Medium: Frustrated Residents</option>
+              <option value="hard">Hard: Near-Crisis Emotions</option>
+            </select>
+          </div>
+
+          <button id="start-btn" class="btn btn-primary">Begin Session</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- CHAT -->
+    <div id="chat-view" class="chat-view hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>Residents</h2>
+          <div class="session-meta">
+            <span id="topic-badge" class="badge">noise</span>
+            <span id="difficulty-badge" class="badge">medium</span>
+          </div>
+        </div>
+        <div id="resident-cards" class="resident-cards"></div>
+      </aside>
+
+      <main class="chat-main">
+        <header class="chat-toolbar">
+          <div class="toolbar-left">
+            <span class="ra-label">RA:</span>
+            <span id="ra-name-display" class="ra-name">You</span>
+          </div>
+          <div class="toolbar-right">
+            <button id="hint-btn" class="btn btn-small">Hint</button>
+            <button id="end-btn" class="btn btn-small">End & Debrief</button>
+          </div>
+        </header>
+
+        <div id="loading-indicator" class="loading-indicator hidden">
+          <span class="spinner"></span>
+          <span class="loading-text">Residents are thinking...</span>
+        </div>
+
+        <div id="chat-log" class="chat-log"></div>
+
+        <div class="composer">
+          <input type="text" id="ra-input" placeholder="Type your response..." autocomplete="off" />
+          <button id="send-btn" class="btn btn-primary">Send</button>
+          <span id="turn-counter" class="turn-counter"></span>
+        </div>
+      </main>
+    </div>
+
+    <!-- DEBRIEF -->
+    <main id="debrief-view" class="debrief-view hidden">
+      <header class="debrief-header">
+        <h1>Session Debrief</h1>
+        <p><span id="debrief-ra-name"></span> · <span id="debrief-topic"></span> · <span id="debrief-difficulty"></span></p>
+      </header>
+
+      <section class="graders-band">
+        <div id="grader-cards" class="grader-cards"></div>
+      </section>
+
+      <section class="consolidated-panel">
+        <h2>Feedback</h2>
+        <div id="consolidated-content"></div>
+      </section>
+
+      <div class="debrief-actions">
+        <button id="restart-btn" class="btn btn-primary">Start New Session</button>
+      </div>
+    </main>
+
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
