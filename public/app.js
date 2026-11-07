@@ -110,7 +110,6 @@ function renderCards(profiles) {
    ============================================================ */
 
 function alexPrompt(topic, difficulty, profile) {
-  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
   return `You are Alex. ${profile.alex.meta}. ${profile.alex.trait} Currently ${profile.alex.mood}.
 
 The issue: ${profile.alex.stance}
@@ -129,7 +128,6 @@ RULES:
 }
 
 function jordanPrompt(topic, difficulty, profile, alexMsg) {
-  const d = { easy: "cooperative", medium: "frustrated", hard: "very upset" }[difficulty];
   return `You are Jordan. ${profile.jordan.meta}. ${profile.jordan.trait} Currently ${profile.jordan.mood}.
 
 The issue: ${profile.jordan.stance}
@@ -148,7 +146,7 @@ RULES:
 - Do NOT prefix with "Jordan:".`;
 }
 
-function graderPrompt(modelName, topic, difficulty, history) {
+function graderPrompt(topic, difficulty, history) {
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
   return `Grade this RA mediation practice session.
 
@@ -266,7 +264,11 @@ async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildRequestBody(model, messages, maxTokens)),
     });
-    data = await res.json();
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(`The server sent an unreadable reply (status ${res.status}). Check that it is running.`);
+    }
     if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
   }
   console.log(formatUsage(model, data.usage));
@@ -451,7 +453,7 @@ async function end() {
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: graderPrompt(g.name, session.topic, session.difficulty, session.turnHistory) }], TOKENS_GRADER);
+          const raw = await call(g.id, [{ role: "system", content: graderPrompt(session.topic, session.difficulty, session.turnHistory) }], TOKENS_GRADER);
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
           const parsed = parseGrading(raw, g.name);
           console.log(`[Grader ${g.name} PARSED]:`, parsed);
@@ -528,9 +530,7 @@ function renderConsolidated(raw, overall) {
     }
   }
 
-  let html = overall === null
-    ? '<div class="score-display"><div class="score-label">Overall score unavailable</div></div>'
-    : `<div class="score-display"><div class="score-number">${overall}/100</div><div class="score-label">Overall Score</div></div>`;
+  let html = `<div class="score-display"><div class="score-number">${overall}/100</div><div class="score-label">Overall Score</div></div>`;
   for (const s of sections) {
     if (s.type === "next") {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;

@@ -105,6 +105,9 @@ function readBody(req, res, onDone) {
     }
     chunks.push(chunk);
   });
+  req.on("error", () => {
+    if (!res.headersSent) sendJsonError(res, 400, "Request failed");
+  });
   req.on("end", () => { if (!tooBig) onDone(Buffer.concat(chunks).toString("utf-8")); });
 }
 
