@@ -616,3 +616,10 @@ body {
   .grader-cards { flex-direction: column; }
   .debrief-view { padding: var(--space-md); }
 }
+
+.turn-counter {
+  align-self: center;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}

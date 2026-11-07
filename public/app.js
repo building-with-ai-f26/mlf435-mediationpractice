@@ -1,6 +1,8 @@
-import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent } from "./logic.js";
+import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, isTurnCapReached, formatUsage } from "./logic.js";
+import { mockResponse } from "./mock.js";
 
 const API_URL = "/api/chat";
+// Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
 const MAIN_MODEL = "deepseek/deepseek-chat";
 const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat", name: "DeepSeek" },
@@ -11,6 +13,9 @@ const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
 const TOKENS_RESIDENT = 150;
 const TOKENS_GRADER = 600;
 const TOKENS_CONSOLIDATOR = 700;
+const MAX_TURNS = 10;
+// ?mock=1 serves canned replies and grades. No fetch, no API key, no cost.
+const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
 const HINTS = [
   "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
@@ -35,13 +40,12 @@ const DOM = {
   debriefRaName: $("debrief-ra-name"), debriefTopic: $("debrief-topic"),
   debriefDifficulty: $("debrief-difficulty"),
   graderCards: $("grader-cards"), consolidated: $("consolidated-content"),
-  restartBtn: $("restart-btn"),
+  restartBtn: $("restart-btn"), turnCounter: $("turn-counter"),
 };
 
 let session = {
   raName: "", topic: "noise", difficulty: "medium",
-  turnHistory: [], active: false, lastSpeaker: "Jordan",
-  alexAgreed: false, jordanAgreed: false, turnCount: 0,
+  turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
 };
 
 /* ============================================================
@@ -170,15 +174,14 @@ Rules:
 - NO em dashes.`;
 }
 
-function consolidatorPrompt(gradings, history) {
-  const g = gradings.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(x => "- " + x).join("\n")}`).join("\n\n---\n\n");
-  return `Three AI supervisors graded the same RA mediation. Consolidate into one debrief.
+function consolidatorPrompt(gradings, overall) {
+  const valid = gradings.filter(gr => gr.score !== null);
+  const g = valid.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(x => "- " + x).join("\n")}`).join("\n\n---\n\n");
+  return `${valid.length} AI supervisor(s) graded the same RA mediation. The overall score is ${overall}/100 and is already computed. Consolidate the feedback into one debrief.
 
 ${g}
 
-Output EXACTLY:
-
-OVERALL SCORE: [average of 3 scores]/100
+Output EXACTLY the following sections. Do NOT output any score line or number out of 100.
 
 WHAT YOU DID WELL:
 - [specific action with transcript reference]
@@ -237,6 +240,9 @@ function hideLoading() {
 function scrollToBottom() {
   DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
 }
+function updateTurnCounter() {
+  if (DOM.turnCounter) DOM.turnCounter.textContent = `Turn ${Math.min(session.turnCount, MAX_TURNS)} of ${MAX_TURNS}`;
+}
 function setInput(enabled) {
   DOM.raInput.disabled = !enabled;
   DOM.sendBtn.disabled = !enabled;
@@ -249,13 +255,20 @@ function setInput(enabled) {
    ============================================================ */
 
 async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildRequestBody(model, messages, maxTokens)),
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
+  let data;
+  if (MOCK) {
+    await new Promise(r => setTimeout(r, 150));
+    data = mockResponse(model, messages);
+  } else {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildRequestBody(model, messages, maxTokens)),
+    });
+    data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
+  }
+  console.log(formatUsage(model, data.usage));
   if (data.choices?.[0]?.finish_reason === "length") {
     console.warn(`[call] Model ${model} response truncated (finish_reason: length)`);
   }
@@ -294,34 +307,6 @@ function cleanResponse(raw) {
   return t;
 }
 
-function checkAutoEnd(cleanText, speaker) {
-  // Only count as agreement if resident CONFIRMS a specific plan, not just mentions "agree" loosely
-  const confirmPatterns = [
-    /yes,? i('|\s)?ll? (do|try|use)/i,
-    /(that|this) works for me/i,
-    /i('|\s)?m (good|happy|fine) with (that|this|it)/i,
-    /(let|can we) (commit|start|try|go|begin)/i,
-    /i agree (with|to) (this|that|the|your)/i,
-    /that (sounds|seems) (fair|reasonable|good)/i,
-    /i(\'m|\s+willing|\s+going)\s+to\s+(try|use|do|follow)/i,
-    /sounds (good|fair|reasonable)/i,
-    /deal,?\s*(we|let)/i,
-  ];
-  const lower = cleanText.toLowerCase();
-  const matched = confirmPatterns.find(p => p.test(cleanText));
-  if (matched) {
-    console.log(`[AutoEnd] ${speaker} CONFIRMED via pattern: "${matched}"`);
-    if (speaker === "Alex") session.alexAgreed = true;
-    if (speaker === "Jordan") session.jordanAgreed = true;
-    if (session.alexAgreed && session.jordanAgreed) {
-      console.log("[AutoEnd] BOTH confirmed! Suggesting end.");
-      return true;
-    }
-  }
-  console.log(`[AutoEnd] ${speaker} did NOT confirm. alex=${session.alexAgreed}, jordan=${session.jordanAgreed}`);
-  return false;
-}
-
 /* ============================================================
    SESSION FLOW
    ============================================================ */
@@ -345,9 +330,8 @@ async function startSession() {
   session.turnHistory = [];
   session.active = true;
   session.lastSpeaker = "Jordan";
-  session.alexAgreed = false;
-  session.jordanAgreed = false;
   session.turnCount = 0;
+  updateTurnCounter();
 
   DOM.raNameDisplay.textContent = session.raName;
   DOM.topicBadge.textContent = session.topic;
@@ -364,7 +348,7 @@ async function startSession() {
   session.profiles = profiles;
   renderCards(profiles);
 
-  DOM.chatLog.appendChild(sysEl("Session started."));
+  DOM.chatLog.appendChild(sysEl(MOCK ? "Session started. MOCK MODE: canned replies, no API calls." : "Session started."));
   setInput(false);
 
   try {
@@ -400,7 +384,7 @@ async function startSession() {
 
 async function send() {
   const text = DOM.raInput.value.trim();
-  if (!text || !session.active) return;
+  if (!text || !session.active || isTurnCapReached(session.turnCount, MAX_TURNS)) return;
 
   const raEntry = { sender: session.raName, text };
   const raEl = msgEl(session.raName, text, "ra");
@@ -423,13 +407,19 @@ async function send() {
 
     const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
 
-    if (checkAutoEnd(cleanText, speaker)) {
-      DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
-    }
-
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
     commitTurn(session, raEntry, speaker, cleanText);
-    setInput(true);
+    if (bothAgreed(session.turnHistory)) {
+      DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
+    }
+    updateTurnCounter();
+    if (isTurnCapReached(session.turnCount, MAX_TURNS)) {
+      // Input and Send stay locked. End & Debrief must stay enabled.
+      DOM.chatLog.appendChild(sysEl("Turn limit reached. Click End & Debrief to finish."));
+      DOM.endBtn.disabled = false;
+    } else {
+      setInput(true);
+    }
     scrollToBottom();
   } catch (err) {
     hideLoading();
@@ -466,7 +456,7 @@ async function end() {
           return parsed;
         } catch (e) {
           console.error(`[Grader ${g.name} FAILED]:`, e.message);
-          return { model: g.name, score: 0, strengths: ["Grading failed: " + e.message], gaps: ["Check API key or model availability"] };
+          return { model: g.name, score: null, strengths: ["Grading failed: " + e.message], gaps: ["Check API key or model availability"] };
         }
       })
     );
@@ -474,8 +464,13 @@ async function end() {
     renderGraderCards(results);
 
     DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Consolidating feedback...</div></div>';
-    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, session.turnHistory) }], TOKENS_CONSOLIDATOR);
-    renderConsolidated(consolidatedRaw);
+    const overall = computeOverallScore(results);
+    if (overall === null) {
+      DOM.consolidated.innerHTML = '<div class="section-block"><div class="score-display"><div class="score-label">Overall score unavailable</div></div><p>All graders failed, so there is no feedback to consolidate.</p></div>';
+      return;
+    }
+    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, overall) }], TOKENS_CONSOLIDATOR);
+    renderConsolidated(consolidatedRaw, overall);
   } catch (err) {
     DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
     console.error(err);
@@ -486,38 +481,13 @@ async function end() {
    GRADING
    ============================================================ */
 
-function parseGrading(raw, name) {
-  console.log(`[parseGrading ${name}] input:`, raw.substring(0, 300));
-  const scoreMatch = raw.match(/SCORE[:\s]+(\d+)/i);
-  const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
-  const strengths = [];
-  const gaps = [];
-  let section = null;
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
-    if (/^STRENGTHS[:\s]/i.test(t)) { section = "s"; continue; }
-    if (/^GAPS[:\s]/i.test(t)) { section = "g"; continue; }
-    if (t.startsWith("- ") && section) {
-      (section === "s" ? strengths : gaps).push(t.slice(2));
-    } else if (t.startsWith("* ") && section) {
-      (section === "s" ? strengths : gaps).push(t.slice(2));
-    }
-  }
-  console.log(`[parseGrading ${name}] score=${score}, strengths=${strengths.length}, gaps=${gaps.length}`);
-  return {
-    model: name,
-    score,
-    strengths: strengths.length ? strengths : ["(No specific strengths parsed)"],
-    gaps: gaps.length ? gaps : ["(No specific gaps parsed)"],
-  };
-}
-
 function renderGraderCards(gradings) {
   DOM.graderCards.innerHTML = gradings.map(g => `
     <div class="grader-card">
       <div class="grader-name">${g.model}</div>
-      <div class="grader-score">${g.score}</div>
-      <div class="grader-note">out of 100</div>
+      ${g.score === null
+        ? '<div class="grader-note">grader unavailable</div>'
+        : `<div class="grader-score">${g.score}</div><div class="grader-note">out of 100</div>`}
       <ul>${g.strengths.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
       <div class="grader-note" style="margin-top:8px;">Gaps:</div>
       <ul>${g.gaps.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
@@ -525,7 +495,7 @@ function renderGraderCards(gradings) {
   `).join("");
 }
 
-function renderConsolidated(raw) {
+function renderConsolidated(raw, overall) {
   const lines = raw.split("\n");
   let sections = [];
   let cur = null;
@@ -535,8 +505,7 @@ function renderConsolidated(raw) {
     if (!t) continue;
 
     if (/^OVERALL SCORE:/i.test(t)) {
-      const m = t.match(/(\d+)/);
-      sections.push({ type: "score", value: m ? m[1] : "N/A" });
+      continue; // score comes from code, never from the model
     } else if (/^WHAT YOU DID WELL:/i.test(t)) {
       cur = { type: "well", items: [], title: "What You Did Well" };
       sections.push(cur);
@@ -557,11 +526,11 @@ function renderConsolidated(raw) {
     }
   }
 
-  let html = "";
+  let html = overall === null
+    ? '<div class="score-display"><div class="score-label">Overall score unavailable</div></div>'
+    : `<div class="score-display"><div class="score-number">${overall}/100</div><div class="score-label">Overall Score</div></div>`;
   for (const s of sections) {
-    if (s.type === "score") {
-      html += `<div class="score-display"><div class="score-number">${s.value}/100</div><div class="score-label">Overall Score</div></div>`;
-    } else if (s.type === "next") {
+    if (s.type === "next") {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
     } else if (s.items.length > 0) {
       html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
@@ -570,7 +539,7 @@ function renderConsolidated(raw) {
     }
   }
 
-  if (!html) {
+  if (sections.length === 0) {
     html = `<div class="section-block"><pre style="font-size:12px;white-space:pre-wrap">${esc(raw)}</pre></div>`;
   }
 
