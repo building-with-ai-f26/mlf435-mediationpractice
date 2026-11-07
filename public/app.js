@@ -1,4 +1,4 @@
-import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, isTurnCapReached, formatUsage } from "./logic.js";
+import { getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
 import { mockResponse } from "./mock.js";
 
 const API_URL = "/api/chat";
@@ -46,6 +46,7 @@ const DOM = {
 let session = {
   raName: "", topic: "noise", difficulty: "medium",
   turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
+  agreementNoticeShown: false,
 };
 
 /* ============================================================
@@ -331,6 +332,7 @@ async function startSession() {
   session.active = true;
   session.lastSpeaker = "Jordan";
   session.turnCount = 0;
+  session.agreementNoticeShown = false;
   updateTurnCounter();
 
   DOM.raNameDisplay.textContent = session.raName;
@@ -409,7 +411,7 @@ async function send() {
 
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
     commitTurn(session, raEntry, speaker, cleanText);
-    if (bothAgreed(session.turnHistory)) {
+    if (shouldShowAgreementNotice(session)) {
       DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
     }
     updateTurnCounter();

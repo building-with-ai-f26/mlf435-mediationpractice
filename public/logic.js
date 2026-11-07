@@ -145,3 +145,11 @@ export function formatUsage(model, usage) {
   const t = usage.total_tokens ?? (typeof p === "number" && typeof c === "number" ? p + c : "?");
   return `[tokens] ${model}: prompt=${p} completion=${c} total=${t}`;
 }
+
+// True the first time both residents agree in a session, false afterwards.
+// Marks the session so the notice is not repeated.
+export function shouldShowAgreementNotice(session) {
+  if (session.agreementNoticeShown || !bothAgreed(session.turnHistory)) return false;
+  session.agreementNoticeShown = true;
+  return true;
+}
