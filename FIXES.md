@@ -1,6 +1,6 @@
 # FIXES.md: Plan for nine small commits
 
-Status: PLAN APPROVED. No code has been changed yet. Commit 1 has not started.
+Status: PLAN APPROVED. Some planned work is already in the code. Deviations from this plan: mock mode is browser-side (`?mock=1`, `public/mock.js`), not server-side `MOCK_MODE`. The resident token limit is 150 (`TOKENS_RESIDENT`), not 200. `tests/server.test.mjs` and `tests/docs.test.mjs` were not written. Commit 1 has not started.
 
 Decisions recorded after review:
 1. The model list stays duplicated between `server.mjs` and `public/app.js`. Each copy gets a comment saying the two lists must match. No shared `models.json`.

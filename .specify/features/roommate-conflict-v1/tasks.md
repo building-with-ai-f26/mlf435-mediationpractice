@@ -21,7 +21,7 @@
 - [x] T014 Track conversation history for debrief (`public/app.js`)
 
 ## Phase 4: Debrief Pipeline
-- [x] T015 Build 3 grader prompts (DeepSeek, Kimi, Gemini) (`public/app.js`)
+- [x] T015 Build 3 grader prompts (DeepSeek, Claude Haiku, Gemini 2.5 Flash) (`public/app.js`)
 - [x] T016 Run 3 gradings in parallel (`public/app.js`)
 - [x] T017 Parse grader responses (score + strengths + gaps) (`public/app.js`)
 - [x] T018 Build consolidator prompt (merge 3 gradings) (`public/app.js`)

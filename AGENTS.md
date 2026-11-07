@@ -20,7 +20,7 @@
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
 - `public/app.js` — All frontend logic: prompts, API calls, turn management, debrief rendering.
 - `public/logic.js` — Pure, testable logic (ES module): routing, prompts, grading parse, agreement check.
-- `public/mock.js` — Canned replies for `?mock=1`. Detection depends on prompt text, so `tests/mock.test.mjs` guards it.
+- `public/mock.js` — Canned replies for `?mock=1`. It does not import the real prompts. The intro, grader and consolidator prompt text is copied into it, so prompt edits in `app.js` or `logic.js` must be mirrored there. `tests/mock.test.mjs` builds mediation prompts with the real `mediationPrompt`, but its grader and consolidator inputs are hand-written and intros are not tested, so it does not catch drift in the copied text.
 - `tests/` — Deterministic tests for `node --test tests/`.
 - `.env` — `OPENROUTER_API_KEY=sk-or-v1-...` (NEVER commit)
 - `docs/index.html` — Product Page / Living PRD (GitHub Pages from `/docs`)
