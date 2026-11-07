@@ -2,6 +2,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { URL } from "url";
+import { isOriginAllowed } from "./origins.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const ALLOWED_ORIGIN = `http://localhost:${PORT}`;
@@ -111,7 +112,7 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
 
   // Only the app's own origin may call us. Browsers always send Origin on cross-site requests.
-  if (origin !== undefined && origin !== ALLOWED_ORIGIN) {
+  if (origin !== undefined && !isOriginAllowed(origin, PORT)) {
     return sendJsonError(res, 403, "Origin not allowed");
   }
   // Reject unexpected Host headers (DNS rebinding).
@@ -119,13 +120,13 @@ const server = http.createServer((req, res) => {
   if (host !== `localhost:${PORT}` && host !== `127.0.0.1:${PORT}`) {
     return sendJsonError(res, 403, "Host not allowed");
   }
-  if (origin === ALLOWED_ORIGIN) {
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  if (origin !== undefined) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   }
 
   if (req.method === "OPTIONS") {
-    if (origin === ALLOWED_ORIGIN) {
+    if (origin !== undefined) {
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     }
