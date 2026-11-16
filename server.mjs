@@ -3,11 +3,16 @@ import fs from "fs";
 import path from "path";
 import { URL } from "url";
 import { isOriginAllowed } from "./origins.mjs";
+import { execSync } from "child_process";
 import { validateChatBody } from "./chatBody.mjs";
+import { MAX_TRANSCRIPT_BYTES, validateTranscript, saveTranscript } from "./liveTranscript.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const ALLOWED_ORIGIN = `http://localhost:${PORT}`;
 const MAX_BODY_BYTES = 64 * 1024;
+const LIVE_DIR = path.join(process.cwd(), "transcripts", "live");
+let GIT_COMMIT = "unknown";
+try { GIT_COMMIT = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "unknown"; } catch { /* not a git checkout */ }
 
 // Keep in sync with public/app.js (MAIN_MODEL, GRADER_MODELS, CONSOLIDATOR_MODEL). The two lists must match.
 const ALLOWED_MODELS = new Set([
@@ -91,14 +96,14 @@ async function proxyToOpenRouter(reqBody) {
   return { status: response.status, ok: response.ok, data };
 }
 
-function readBody(req, res, onDone) {
+function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
   const chunks = [];
   let size = 0;
   let tooBig = false;
   req.on("data", chunk => {
     if (tooBig) return;
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       tooBig = true;
       sendJsonError(res, 413, "Request body too large");
       return;
@@ -169,6 +174,21 @@ const server = http.createServer((req, res) => {
         sendJsonError(res, err.name === "TimeoutError" ? 504 : 502, "Upstream request failed");
       }
     });
+  }
+
+  if (pathname === "/api/transcript") {
+    if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
+    return readBody(req, res, text => {
+      const { record, error, status } = validateTranscript(text, { key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT });
+      if (error) return sendJsonError(res, status, error);
+      try {
+        const file = saveTranscript(record, LIVE_DIR);
+        send(res, 200, JSON.stringify({ ok: true, file }), "application/json");
+      } catch (err) {
+        console.error("Transcript save error:", err.message);
+        sendJsonError(res, 500, "Could not save transcript");
+      }
+    }, MAX_TRANSCRIPT_BYTES);
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {

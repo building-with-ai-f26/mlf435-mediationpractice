@@ -19,8 +19,8 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
   ```
 - **Start the server:** `node server.mjs`, then open `http://localhost:3000`. Run it from the repo root, because it reads `.env` from the current directory. It exits with an error if `.env` has no `OPENROUTER_API_KEY=` line. It listens on `127.0.0.1` only. Set `PORT=<number>` to use another port; the origin check follows it.
 - **Run offline (no API calls):** open `http://localhost:3000/?mock=1`. The browser uses canned replies and grades. The server still has to start, so `.env` needs a key line even in mock mode.
-- **Run tests:** `node --test tests/`. Deterministic and offline: 142 tests in 17 files.
-- **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 10.
+- **Run tests:** `node --test tests/`. Deterministic and offline: 169 tests in 18 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
+- **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 11.
 - **Simulate sessions:** `node tools/simulate.mjs [flags]`. Runs whole sessions (residents, simulated RA, tagger, three graders) directly against OpenRouter, not the local server. Live runs cost money and save one transcript per session under `transcripts/`. Flags, all optional:
 
   | Flag | Default | Values |
@@ -29,7 +29,7 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
   | `--difficulty` | `medium` | `easy`, `medium`, `hard` |
   | `--persona` | `all` | `all`, or one of `strong`, `rushed-good`, `average`, `solution-pusher`, `side-taker`, `minimal`, `typo-good`, `nickname-both`, `hostile`, `injection` |
   | `--runs` | `1` | whole number of at least 1, runs per persona |
-  | `--max-turns` | `8` | whole number of at least 1. Currently has no effect; see section 10 |
+  | `--max-turns` | `8` | whole number of at least 1. Currently has no effect; see section 11 |
   | `--ra-model` | `deepseek/deepseek-chat` | any OpenRouter model id for the simulated RA. Not checked against the server allowlist, because the tool calls OpenRouter directly |
   | `--max-cost` | `1.00` | US dollars. Stops before the next call once known spend exceeds it |
   | `--out` | `transcripts` | folder for saved transcripts and `index.csv` |
@@ -37,12 +37,14 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
 
   There is no `--help`. An unknown flag or bad value exits with an error. Safe check: `node tools/simulate.mjs --persona strong --dry`.
 - **Report saved runs:** `node tools/report.mjs [--dir transcripts] [--include-dry]`. Reads every saved transcript and prints: score by persona against its expected range, mean count by grader, YES answers the evidence check changed, grader disagreement, and mean cost. Dry-run records are skipped unless `--include-dry` is given. No `--help`.
+- **Export live sessions for sharing:** `node tools/export-live.mjs <file or folder>... [--out transcripts/shared] [--name <RA name>]`. Copies live session files from `transcripts/live/` to `transcripts/shared/` with every line that looks like an email address or phone number removed, and the RA name replaced by "RA" if `--name` is given. Skips files that are not live sessions or that contain `sk-or-`. Only files in `transcripts/shared/` may be committed. Read them before committing: the redaction is pattern based.
 - **Sync the hosted demo:** `scripts/sync-demo.sh`. Deletes and rebuilds `docs/demo/` as a copy of `public/` for GitHub Pages. No flags. Commit `docs/demo/` after any change in `public/`.
 - **Run model evals:** Manual end-to-end session and debrief checks, plus `tools/simulate.mjs` and `tools/report.mjs` as above. See `tests/README.md` for the Build 4 tracks.
 
 ## 3. Architecture
 - `server.mjs` — Node `http` server on `127.0.0.1`. Serves `public/` (GET and HEAD only) and forwards `POST /api/chat` to OpenRouter, adding the key from `.env`. Rejects models not in `ALLOWED_MODELS`, bodies over 64 KB, and requests with an unexpected Origin or Host.
 - `chatBody.mjs` — Validates the `/api/chat` body: model allowlist, non-empty messages, `max_tokens` (capped at 2000), temperature clamp, `reasoning` shape. Imported by `server.mjs`.
+- `liveTranscript.mjs` — Validates and saves one live session for `POST /api/transcript`: 200 KB cap, refuses `sk-or-` and the loaded key, keeps only known fields, adds `source: "live"` and the git commit, writes the file and the index row. Imported by `server.mjs` and tests.
 - `origins.mjs` — The allowed origins, `localhost` and `127.0.0.1` on the server port. Imported by `server.mjs`.
 - `public/index.html` — Single-page app with 3 views: setup, chat, debrief. Loads the PostHog snippet (section 9).
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
@@ -50,10 +52,13 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
 - `public/logic.js` — Pure, testable logic (ES module): responder routing, request body, reply cleanup, resident openness and tagger parsing, mediation prompt, agreement check, mock-mode flags.
 - `public/config.js` — No-DOM settings and builders: model ids (`MAIN_MODEL`, `GRADER_MODELS`, `TAGGER_MODEL`), token and option constants, `MAX_TURNS` (10), `getProfiles`, Alex and Jordan intro prompts, `createSession()`. Imported by `app.js`, `mock.js`, tests and `tools/`.
 - `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
+- `public/liveRecord.js` — Pure: builds the record `app.js` sends at the end of a live session, replaces the RA name with "RA", and counts token usage per role.
 - `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
-- `tests/` — 17 `node:test` files, run with `node --test tests/`, plus `tests/README.md` (Build 4 evaluation tracks).
-- `tools/` — `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
+- `tests/` — 18 `node:test` files, run with `node --test tests/`, plus `tests/README.md` (Build 4 evaluation tracks).
+- `tools/` — `export-live.mjs` (redacted copies of live sessions), `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
 - `transcripts/` — Output of `tools/simulate.mjs`: `YYYY-MM-DD/HHMMSS-<scenario>-<difficulty>-<persona>.json`, plus `index.csv`. Read by `tools/report.mjs`.
+- `transcripts/live/` — Live sessions saved by the server (git-ignored): `YYYY-MM-DD/HHMMSS-<topic>-<difficulty>.json` plus `index.csv`. `tools/report.mjs` skips them (`source: "live"`).
+- `transcripts/shared/` — Redacted copies made by `tools/export-live.mjs`. The only transcripts that may be committed.
 - `scripts/sync-demo.sh` — Rebuilds `docs/demo/` from `public/`.
 - `.env.example` — Placeholder only. Copy it to `.env`. `.env` is git-ignored and must never be committed.
 - `.env` — `OPENROUTER_API_KEY=sk-or-v1-...` (NEVER commit)
@@ -116,7 +121,16 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 - Events carry counts and labels only (turn number, character count, topic, difficulty, met count, error location). They never carry message text, the RA's name or transcripts.
 - Analytics never throws. A blocked PostHog does not break the app.
 
-## 10. Known Gaps
+## 10. Live Session Saving
+Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to disk for later review.
+
+1. **When:** `app.js` posts the record to `POST /api/transcript` when the debrief finishes. If the tab is closed first, a `pagehide` handler sends a partial record (`partial: true`, no grader results) with `navigator.sendBeacon`. Both need at least 2 RA turns, and a session is sent once. A failed save is logged to the console and never shown or thrown, in the same style as `track()`.
+2. **Route rules:** same Origin and Host checks as `/api/chat`, POST only, body capped at 200 KB, any body containing `sk-or-` (or the loaded key) is refused with 400, only known fields are kept. The server adds `source: "live"` and the git commit; the browser cannot set either.
+3. **Record:** the simulator shape plus `source`: `scenario` (the topic), `difficulty`, `transcript` lines with `turn`, `role` (`ra` or `resident`), `sender` and `text`, `openness` start and per turn, `routing` per turn (who answered and whether code or the router decided), `graders` with answers, `combined`, `result`, `models`, `usage` (calls and tokens per role: resident, tagger, router, graders) and `gitCommit`. Cost is not stored.
+4. **Privacy:** the RA name is replaced by "RA" in the browser before sending, including inside message text. It is skipped if the name is "You" (no name entered), Alex or Jordan. Messages can still contain other personal details, so `transcripts/live/` is git-ignored and sharing goes through `tools/export-live.mjs`.
+5. **PostHog is unchanged:** it still gets counts and labels only. Saved transcripts never go to PostHog.
+
+## 11. Known Gaps
 1. **Voice input is not built.** Planned for v2 (spec task T042).
 2. **No retry.** Failed grader calls are shown as failed, and failed resident calls show an error for the RA to retry. Nothing retries with backoff (T046).
 3. **No cost in the UI.** The debrief does not show per-session cost (T045). Cost is only reported by `tools/simulate.mjs` and `tools/report.mjs`.
@@ -128,5 +142,5 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 9. **Tests do not cover live model behaviour or the browser UI.** There is no browser test. Model quality is checked by hand and by `tools/simulate.mjs`. `tests/config.test.mjs` does not check `TAGGER_MODEL` against the allowlist.
 10. **Residents agree too easily.** `RESIDENT-NOTES.md` (not yet committed) finds that residents reach agreement whatever the RA does, so the agreement is not a reliable sign of good mediation.
 11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
-12. **Saved data is not managed.** The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` is not committed and not in `.gitignore`.
+12. **Saved data is not managed.** Live sessions pile up in `transcripts/live/` with no cleanup, and a partial save from a closed tab is not merged with a later full one. The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` (except `live/`, which is git-ignored) is not committed and not in `.gitignore`.
 13. **Local only.** The server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.

@@ -28,5 +28,5 @@ test("config.js and app.js: residents default to 150 tokens, graders use tempera
   assert.match(config, /export const TOKENS_RESIDENT = 150;/);
   assert.match(config, /export const TOKENS_GRADER = 1500;/);
   assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: \{ enabled: false \} \};/);
-  assert.match(app, /async function call\(model, messages, opts = \{ maxTokens: TOKENS_RESIDENT \}\)/);
+  assert.match(app, /async function call\(model, messages, opts = \{ maxTokens: TOKENS_RESIDENT \}, role = "resident"\)/);
 });

@@ -34,3 +34,6 @@ build/
 out/
 .DS_Store
 *.log
+
+# Live session transcripts (may contain what real people typed). Share only via tools/export-live.mjs into transcripts/shared/.
+transcripts/live/

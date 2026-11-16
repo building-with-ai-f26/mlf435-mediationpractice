@@ -14,7 +14,7 @@ export function loadRecords(dir, { includeDry = false } = {}) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.name.endsWith(".json")) {
-        try { const r = JSON.parse(fs.readFileSync(p, "utf-8")); if (r && r.schemaVersion && (includeDry || !r.dry)) out.push(r); } catch {}
+        try { const r = JSON.parse(fs.readFileSync(p, "utf-8")); if (r && r.schemaVersion && r.source !== "live" && (includeDry || !r.dry)) out.push(r); } catch {}
       }
     }
   };

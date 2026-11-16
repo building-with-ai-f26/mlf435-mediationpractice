@@ -1,14 +1,105 @@
 // Pure functions. No DOM, window, or localStorage access, so tests can import this file.
 
-// Decide which resident answers the RA's message.
-// Only one name mentioned: that resident. Both or neither: the resident who did not speak last.
+// ---- Routing: which resident answers the RA's message ----
+
+// Case-insensitive word without the i flag, so "Al" and "J" can stay capital-only.
+const ci = w => [...w].map(c => `[${c.toLowerCase()}${c.toUpperCase()}]`).join("");
+const ALEX_RE = `(?:${ci("alex")}|Al)`;
+const JORDAN_RE = `(?:${ci("jordan")}|${ci("jordy")}|${ci("jord")}|J)`;
+const NAME_RE = `(${ALEX_RE}|${JORDAN_RE})`;
+const nameKey = tok => (new RegExp(`^${ALEX_RE}$`).test(tok) ? "alex" : "jordan");
+const OTHER = { alex: "jordan", jordan: "alex" };
+
+// A name used as a reference ("agree with whatever Alex says"), not as the person spoken to.
+const REFERENT_PATTERNS = [
+  new RegExp(`(\\b(?:agree|agrees|go along|goes along|side|sides|align|match|follow|copy|defer|stick)\\s+(?:with|to)\\s+(?:whatever\\s+|what\\s+)?)${NAME_RE}\\b()`, "g"),
+  new RegExp(`(\\b(?:whatever|what|whichever|how)\\s+)${NAME_RE}(\\s+(?:says|said|say|wants|want|suggested|suggests|proposed|proposes|decides|decided|thinks|think|asked|needs|feels|felt|did|does)\\b)`, "g"),
+];
+const FILLER = "(?:hey|hi|hello|ok|okay|so|well|now|and|thanks|thank you|right|alright)";
+
+// Pure. Returns { to: "alex" | "jordan" | "both" | "unclear" } using names only (no model call).
+// Addressed = a name at the start of a sentence, or after a comma at the end of a sentence
+// ("What do you think, Alex?"). Names used as references are ignored. If nobody is addressed
+// but one resident is named, that resident answers. lastSpeaker is accepted for a stable
+// signature; the fallback for "unclear" is chosen by the caller.
+export function routeMessage(raText, lastSpeaker) { // eslint-disable-line no-unused-vars
+  let text = String(raText || "");
+  const referents = new Set();
+  for (const re of REFERENT_PATTERNS) {
+    text = text.replace(re, (m, pre, name, post) => { referents.add(nameKey(name)); return `${pre}§${post}`; });
+  }
+
+  const addressed = [];
+  const mentioned = [];
+  const add = (list, k) => { if (!list.includes(k)) list.push(k); };
+  for (const m of text.matchAll(new RegExp(`\\b${NAME_RE}\\b`, "g"))) add(mentioned, nameKey(m[1]));
+
+  const startRe = new RegExp(`^\\s*(?:${FILLER}[\\s,]+)*\\b${NAME_RE}\\b`);
+  const nextRe = new RegExp(`^\\s*(?:,|and|&)\\s*\\b${NAME_RE}\\b`);
+  const endRe = new RegExp(`,\\s*\\b${NAME_RE}\\s*[?!.]*\\s*$`);
+  for (const sentence of text.match(/[^.!?\n]+[.!?]*/g) || []) {
+    let m = sentence.match(startRe);
+    if (m) {
+      add(addressed, nameKey(m[1]));
+      let rest = sentence.slice(m[0].length), n;
+      while ((n = rest.match(nextRe))) { add(addressed, nameKey(n[1])); rest = rest.slice(n[0].length); }
+    }
+    const e = sentence.match(endRe);
+    if (e) add(addressed, nameKey(e[1]));
+  }
+
+  if (addressed.length >= 2) return { to: "both" };
+  if (addressed.length === 1) return { to: addressed[0] };
+  if (mentioned.length === 1) return { to: mentioned[0] };
+  if (mentioned.length === 0 && referents.size === 1) return { to: OTHER[[...referents][0]] };
+  return { to: "unclear" };
+}
+
+// Resident names in the order they first appear, for "both" (first named answers first).
+// With no names, the resident who did not speak last goes first.
+export function bothOrder(raText, lastSpeaker) {
+  const found = [];
+  for (const m of String(raText || "").matchAll(new RegExp(`\\b${NAME_RE}\\b`, "g"))) {
+    const k = nameKey(m[1]);
+    if (!found.includes(k)) found.push(k);
+  }
+  if (found.length === 2) return found;
+  return lastSpeaker === "Alex" ? ["jordan", "alex"] : ["alex", "jordan"];
+}
+
+// Resident who did not speak last. Used when the router call is skipped, fails or replies badly.
+export function fallbackResponder(lastSpeaker) {
+  return lastSpeaker === "Alex" ? "jordan" : "alex";
+}
+
+// Prompt for the cheap router call: last 3 transcript lines plus the RA message.
+export function buildRouterPrompt(history, raText) {
+  const recent = (history || []).slice(-3).map(h => `${h.sender}: ${h.text}`).join("\n") || "(no messages yet)";
+  return `You route messages in a roommate mediation practice. The two roommates are Alex and Jordan. The RA (resident assistant) just wrote a message that does not clearly name who it is for.
+
+LAST MESSAGES:
+${recent}
+
+RA MESSAGE:
+${raText}
+
+Decide who the RA message is really for, or who would naturally react to it. Reply with exactly one word: ALEX, JORDAN or BOTH. No other text.`;
+}
+
+// Pure. Reads the router reply. Anything other than ALEX, JORDAN or BOTH falls back to the
+// resident who did not speak last. Returns { to: "alex" | "jordan" | "both", source: "router" | "fallback" }.
+export function parseRouterReply(raw, lastSpeaker) {
+  const word = String(raw ?? "").trim().replace(/[.!]+$/, "").toUpperCase();
+  if (word === "ALEX" || word === "JORDAN" || word === "BOTH") return { to: word.toLowerCase(), source: "router" };
+  return { to: fallbackResponder(lastSpeaker), source: "fallback" };
+}
+
+// Old single-resident API, still used by tools/simulate.mjs and mock mode (no model call).
+// Returns "Alex" or "Jordan". "both" gives the first named; "unclear" gives the resident who did not speak last.
 export function getResponder(raText, lastSpeaker) {
-  const text = String(raText || "");
-  const alex = /\balex\b/i.test(text);
-  const jordan = /\bjordan\b/i.test(text);
-  if (alex && !jordan) return "Alex";
-  if (jordan && !alex) return "Jordan";
-  return lastSpeaker === "Alex" ? "Jordan" : "Alex";
+  const { to } = routeMessage(raText, lastSpeaker);
+  const key = to === "both" ? bothOrder(raText, lastSpeaker)[0] : to === "unclear" ? fallbackResponder(lastSpeaker) : to;
+  return key === "alex" ? "Alex" : "Jordan";
 }
 
 // opts: { maxTokens, temperature, reasoning }. Residents use 0.8 / 150. Graders pass their own values.
@@ -189,9 +280,14 @@ RULES:
 // Record a finished turn. Called only after the resident reply succeeded, so a failed
 // request leaves history, turn count, and last speaker untouched.
 export function commitTurn(session, raEntry, speaker, replyText) {
-  session.turnHistory.push(raEntry, { sender: speaker, text: replyText });
+  commitReplies(session, raEntry, [{ sender: speaker, text: replyText }]);
+}
+
+// Same, for one RA message answered by one or more residents in order. Counts as one RA turn.
+export function commitReplies(session, raEntry, replies) {
+  session.turnHistory.push(raEntry, ...replies);
   session.turnCount += 1;
-  session.lastSpeaker = speaker;
+  session.lastSpeaker = replies[replies.length - 1].sender;
 }
 
 // ---- Agreement detection ----

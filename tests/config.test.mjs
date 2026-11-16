@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, TAGGER_MODEL, TAGGER_OPTS, getProfiles, createSession } from "../public/config.js";
+import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, getProfiles, createSession } from "../public/config.js";
 
 test("every model id is on the server allowlist", () => {
   const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
@@ -65,4 +65,11 @@ test("setup list offers religious practice and the server-free topic list matche
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /<option value="religious practice">Religious Practice<\/option>/);
   assert.equal((html.match(/<option value="[a-z ]+">[^<]*(Complaint|Dispute|Violation|Concern|Conflict|Practice)<\/option>/g) || []).length, 6);
+});
+
+test("router settings, and the router model is on the server allowlist", () => {
+  assert.equal(ROUTER_MODEL, "anthropic/claude-haiku-5.5");
+  assert.deepEqual(ROUTER_OPTS, { maxTokens: 30, temperature: 0, reasoning: { enabled: false } });
+  const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes(`"${ROUTER_MODEL}"`));
 });

@@ -18,6 +18,10 @@ export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning
 export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_TAGGER = 150;
 export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
+// Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
+export const ROUTER_MODEL = "anthropic/claude-haiku-5.5";
+export const TOKENS_ROUTER = 30;
+export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
 export const MAX_TURNS = 10;
 
 export function getProfiles(topic, difficulty) {

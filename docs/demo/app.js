@@ -1,7 +1,8 @@
-import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode } from "./logic.js";
-import { mockResponse } from "./mock.js";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
-import { RUBRIC, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode } from "./logic.js";
+import { mockResponse, mockRoute } from "./mock.js";
+import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
+import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
 // ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
@@ -42,6 +43,8 @@ const DOM = {
 };
 
 let session = createSession();
+// What gets saved at the end of a live session (see saveLive). Reset in startSession().
+let live = newLiveLog();
 
 /* ============================================================
    CARDS
@@ -116,7 +119,8 @@ function setInput(enabled) {
    API
    ============================================================ */
 
-async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }) {
+// role is only a label for the token counts saved with a live session.
+async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role = "resident") {
   let data;
   if (MOCK) {
     await new Promise(r => setTimeout(r, 150));
@@ -135,6 +139,7 @@ async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }) {
     if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
   }
   console.log(formatUsage(model, data.usage));
+  addUsage(live, role, data.usage);
   if (data.choices?.[0]?.finish_reason === "length") {
     console.warn(`[call] Model ${model} response truncated (finish_reason: length)`);
   }
@@ -172,6 +177,8 @@ async function startSession() {
   session.turnCount = 0;
   session.agreementNoticeShown = false;
   session.openness = startingOpenness(session.difficulty);
+  live = newLiveLog();
+  live.opennessStart = { alex: session.openness.alex, jordan: session.openness.jordan };
   updateTurnCounter();
 
   DOM.raNameDisplay.textContent = session.raName;
@@ -225,6 +232,24 @@ async function startSession() {
   }
 }
 
+// Who answers. Names first (pure code). If nobody is clearly addressed, one cheap router call;
+// a failed call or a reply that is not ALEX, JORDAN or BOTH falls back to the resident who did not speak last.
+// Mock mode never calls a model.
+async function decideRoute(text) {
+  if (MOCK) return mockRoute(text, session.lastSpeaker);
+  const { to } = routeMessage(text, session.lastSpeaker);
+  if (to !== "unclear") return { to, source: "code" };
+  try {
+    const raw = await call(ROUTER_MODEL, [{ role: "system", content: buildRouterPrompt(session.turnHistory, text) }], ROUTER_OPTS, "router");
+    const parsed = parseRouterReply(raw, session.lastSpeaker);
+    if (parsed.source === "fallback") console.warn("[Routing] router reply not usable:", JSON.stringify(raw));
+    return { to: parsed.to, source: parsed.source === "router" ? "router call" : "code (router reply unusable)" };
+  } catch (e) {
+    console.warn("[Routing] router call failed:", e.message);
+    return { to: parseRouterReply("", session.lastSpeaker).to, source: "code (router call failed)" };
+  }
+}
+
 async function send() {
   const text = DOM.raInput.value.trim();
   if (!text || !session.active || isTurnCapReached(session.turnCount, MAX_TURNS)) return;
@@ -239,29 +264,42 @@ async function send() {
 
   const turn = session.turnCount + 1;
   track("ra_message_sent", { turn, chars: text.length });
-  const speaker = getResponder(text, session.lastSpeaker);
-  console.log("[Routing] RA said:", text, "| responder:", speaker);
+  const shownEls = [];
 
   try {
+    const route = await decideRoute(text);
+    const keys = route.to === "both" ? bothOrder(text, session.lastSpeaker) : [route.to];
+    const speakers = keys.map(k => (k === "alex" ? "Alex" : "Jordan"));
+    console.log("[Routing] RA said:", text, "| responders:", speakers.join(", "), "| source:", route.source);
+
     // Tag the RA message, then update openness. An unreadable or failed tagger reply changes nothing.
     let tags = null;
     try {
-      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS));
+      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS, "tagger"));
     } catch (e) {
       console.warn("[Tagger] failed, openness unchanged:", e.message);
     }
     const openness = updateOpenness(session.openness, tags, session.difficulty);
     console.log("[Tagger]", tags, "openness", openness);
-    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
+    // One RA message, one or two resident replies in order. The second sees the first.
+    const replies = [];
+    for (const speaker of speakers) {
+      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
+      const cleanText = cleanResponse(raw);
+      console.log("[Response raw]", raw);
+      console.log("[Response clean]", cleanText);
+      const el = msgEl(speaker, cleanText, speaker.toLowerCase());
+      DOM.chatLog.appendChild(el);
+      shownEls.push(el);
+      replies.push({ sender: speaker, text: cleanText });
+      if (speaker !== speakers[speakers.length - 1]) { scrollToBottom(); showLoading(); }
+    }
     hideLoading();
-    const cleanText = cleanResponse(raw);
-    console.log("[Response raw]", raw);
-    console.log("[Response clean]", cleanText);
-
-    const type = speaker.toLowerCase() === "alex" ? "alex" : "jordan";
-
-    DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
-    commitTurn(session, raEntry, speaker, cleanText);
+    live.turns.push({
+      turn, at: new Date().toISOString(), ra: text, replies, route: { to: route.to, responders: speakers, source: route.source },
+      tags, opennessBefore: { alex: session.openness.alex, jordan: session.openness.jordan }, opennessAfter: { alex: openness.alex, jordan: openness.jordan },
+    });
+    commitReplies(session, raEntry, replies);
     session.openness = openness;
     if (shouldShowAgreementNotice(session)) {
       DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
@@ -279,6 +317,7 @@ async function send() {
     hideLoading();
     // Nothing was committed to the session, so only the screen and input need restoring.
     raEl.remove();
+    shownEls.forEach(el => el.remove());
     DOM.raInput.value = text;
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
     track("error_shown", { where: "mediation_turn" });
@@ -286,6 +325,45 @@ async function send() {
     console.error(err);
   }
 }
+
+/* ============================================================
+   SAVING LIVE SESSIONS (local server only, never in mock or demo mode)
+   ============================================================ */
+
+// Same style as track(): any failure is swallowed so a save can never break the app.
+function liveRecord(results, partial) {
+  let combined = null, result = null;
+  if (results.some(r => r.ok)) {
+    combined = combineGraders(results);
+    result = scoreFromCombined(combined);
+  }
+  return buildLiveRecord({
+    session, live, graders: results, combined, result, partial, rubricVersion: RUBRIC_VERSION,
+    models: { resident: MAIN_MODEL, tagger: TAGGER_MODEL, router: ROUTER_MODEL, graders: GRADER_MODELS.map(g => g.id) },
+  });
+}
+
+function saveLive(results) {
+  try {
+    if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
+    live.saving = true;
+    const body = JSON.stringify(liveRecord(results, false));
+    fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
+      .then(res => { live.saved = res.ok; live.saving = false; if (!res.ok) console.warn("[Save] server refused the transcript:", res.status); })
+      .catch(e => { live.saving = false; console.warn("[Save] failed:", e.message); });
+  } catch (e) { live.saving = false; /* ignore */ }
+}
+
+// Tab closed or navigated away before the debrief finished: send what we have, once.
+function saveLiveOnLeave() {
+  try {
+    if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
+    live.saved = true;
+    const blob = new Blob([JSON.stringify(liveRecord([], true))], { type: "application/json" });
+    navigator.sendBeacon("/api/transcript", blob);
+  } catch (e) { /* ignore */ }
+}
+window.addEventListener("pagehide", saveLiveOnLeave);
 
 async function end() {
   if (!session.active) return;
@@ -306,21 +384,22 @@ async function end() {
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: prompt }], GRADER_OPTS);
+          const raw = await call(g.id, [{ role: "system", content: prompt }], GRADER_OPTS, "graders");
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
           const parsed = parseRubricReply(raw);
           if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
           const verified = verifyEvidence(parsed.answers, session.turnHistory);
           if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO, quote not found in RA messages: Q${verified.changed.join(", Q")}`);
-          return { name: g.name, ok: true, answers: verified.answers };
+          return { name: g.name, model: g.id, ok: true, answers: verified.answers, changed: verified.changed };
         } catch (e) {
           const finish = e.finishReason ?? "none (no reply received)";
           console.error(`[Grader ${g.name} FAILED]: ${e.message} (finish_reason: ${finish})`);
-          return { name: g.name, ok: false, answers: {}, error: `${e.message} (finish_reason: ${finish})` };
+          return { name: g.name, model: g.id, ok: false, answers: {}, error: `${e.message} (finish_reason: ${finish})` };
         }
       })
     );
     renderDebrief(results);
+    saveLive(results);
   } catch (err) {
     DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
     track("error_shown", { where: "debrief" });

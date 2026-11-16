@@ -4,7 +4,7 @@
 // builds the real prompts and checks they are still recognised, so drift fails a test.
 
 import { getProfiles } from "./config.js";
-import { OPENNESS_MARKER } from "./logic.js";
+import { OPENNESS_MARKER, routeMessage, fallbackResponder } from "./logic.js";
 
 const INTRO = {
   alex: {
@@ -178,4 +178,10 @@ export function mockResponse(model, messages) {
     choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
     usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
   };
+}
+
+// Mock mode routing. Code only, never a model call: "unclear" goes to the resident who did not speak last.
+export function mockRoute(raText, lastSpeaker) {
+  const { to } = routeMessage(raText, lastSpeaker);
+  return { to: to === "unclear" ? fallbackResponder(lastSpeaker) : to, source: "code" };
 }
