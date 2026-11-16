@@ -167,14 +167,21 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> Build 1: local prototype, plus a hosted demo in scripted mode<br />
+        <strong>Current Status:</strong> Build 2: local app with live AI, yes/no rubric scoring and an automated tester; the hosted demo is scripted<br />
         <strong>Demo:</strong> <a href="demo/">Open the demo</a>. It runs a full session with scripted roommate replies and a scripted debrief, so it needs no key and costs nothing. The live AI version runs locally for now.
       </p>
       <p>
         <img src="B1_Screenshot.png" alt="Build 1 Screenshot: RA Practice Scenarios chat interface" style="max-width: 100%; border-radius: 8px; border: 1px solid #e5e7eb;" />
       </p>
+      <p>
+        <img src="b2-live-chat.png" alt="Build 2 live run: RA mediating between two AI roommates in the local app" style="max-width: 100%; border-radius: 8px; border: 1px solid #e5e7eb;" />
+      </p>
+      <p>
+        <img src="b2-live-debrief.png" alt="Build 2 live run: debrief with the 15-question rubric result" style="max-width: 100%; border-radius: 8px; border: 1px solid #e5e7eb;" />
+      </p>
+      <p class="meta">Live run with real AI, local app</p>
       <p class="meta">
-        Screenshot captured 2026-11-01. Add cloud app link and 2-minute video in Build 5.
+        Build 1 screenshot captured 2026-11-01. Add cloud app link and 2-minute video in Build 5.
       </p>
     </section>
 
@@ -186,31 +193,32 @@
       <h3>1. Target User & The Job to Be Done</h3>
       <p><strong>Who is this for?</strong> A current Resident Assistant on my Housing Team who I can test with in person.</p>
       <p><strong>The painful "Before" workflow:</strong> RAs get one human role play during training. Many feel unprepared the first time they have to mediate a real roommate conflict, and they cannot practice again on their own.</p>
-      <p><strong>The "After" workflow with this product:</strong> An RA can practice a roommate mediation any time. They pick a conflict topic and a difficulty, then mediate between two AI roommates who disagree, speaking out loud or typing, and get a short debrief.</p>
+      <p><strong>The "After" workflow with this product:</strong> An RA can practice a roommate mediation any time. They pick a conflict topic and a difficulty, then mediate between two AI roommates who disagree by typing, and get a scored debrief. Voice is planned after testing.</p>
 
       <h3>2. Scope & Explicit Non-Goals</h3>
       <ul>
-        <li><strong>In Scope (Core Workflow):</strong> The RA picks a topic (cleaning, guest policy, hygiene, noise, shared items, religious practice) and a difficulty (easy, medium, hard). Two AI roommates with distinct personalities and opposing positions begin the conflict. The RA mediates by voice using the browser microphone, with a typed-text fallback if voice fails. The roommates answer in turn by name. The RA ends the session and sees a short debrief: what they did well, what they missed, and one thing to try next time.</li>
+        <li><strong>In Scope (Core Workflow):</strong> The RA picks a topic (cleaning, guest policy, hygiene, noise, shared items, religious practice) and a difficulty (easy, medium, hard). Two AI roommates with distinct personalities and opposing positions begin the conflict. The RA mediates by typing. Voice is planned after testing. The roommates answer in turn by name. The RA ends the session and sees a debrief: a score out of 15 from a yes/no rubric, how the three AI graders agreed on each question, and one tip for the first missed question.</li>
         <li><strong>Out of Scope #1:</strong> The other scenarios (Boundary Setting, Difficult Parent, Resident Disengagement, Bias Incident, Party with Alcohol, Drug Use, Depression and Suicidal Ideation, Alcohol Intoxication, Sitting with Discomfort). Roommate Conflict only for now.</li>
         <li><strong>Out of Scope #2:</strong> Real-time listening and live coaching prompts during a real mediation. That is the long-term vision, not v1.</li>
         <li><strong>Out of Scope #3:</strong> Accounts, saved transcripts, and public hosting of the app. The prototype runs locally on my computer.</li>
       </ul>
 
-      <h3>3. How It Works Under the Hood & Riskiest Assumption (Week 2+)</h3>
-      <p><strong>Riskiest Assumption:</strong> An LLM can realistically simulate two opposing roommates who stay in character, respond to the RA in turn, and provide a useful debrief. If the AI is repetitive, breaks character, or gives vague feedback, the tool will not feel like real practice.</p>
-      <p><strong>Simple Architecture:</strong> Browser (microphone + text input) → Local frontend calls OpenRouter (Kimi or DeepSeek) via local proxy or direct fetch with key from .env → AI roommates respond in turn → Session ends, LLM generates debrief</p>
+      <h3>3. How It Works Under the Hood & Riskiest Assumption (PRD v2)</h3>
+      <p><strong>Biggest risk:</strong> The AI roommates and graders may not be realistic or fair enough for an RA to trust the practice.</p>
+      <p><strong>How this build tests it:</strong> A calibration run with an automated tester. It plays whole sessions with simulated RAs: ten personas are defined (strong, rushed-good, average, solution-pusher, side-taker, minimal, typo-good, nickname-both, hostile, injection), each with an expected score range out of 15. The pass target is that each persona lands inside its range, for example strong 12-15, average 5-8, hostile 0-2. This run covered 8 sessions (noise topic, medium difficulty, one session per persona); side-taker and minimal have not been run yet. Results: 4 of 7 personas with a range landed in range (typo-good, nickname-both, average, hostile). 3 were out of range: strong scored 7 (expected 12-15), rushed-good scored 5 (expected 8-11), solution-pusher scored 0 (expected 1-4). The injection persona scored 0 and has no range. The graders disagreed on 34 of 120 questions (28.3%). The evidence check changed YES answers to NO 4 times for DeepSeek, 1 time for Claude and 0 times for Gemini. With one session per persona this is a first signal, not a reliable measure. [Next step: more runs per persona, and the two personas not yet run.]</p>
+      <p><strong>How it works:</strong> The browser sends each message to a local server, which adds the API key and forwards the request to OpenRouter. Two AI roommates, Alex and Jordan, answer in turn. When the RA ends the session, three AI graders each answer a 15-question yes/no rubric. A YES counts only if it includes a short quote that code finds in the RA's own lines (the evidence check). Each question is met by majority vote, and the score is computed in code, not by a model. The automated tester runs whole sessions against the same prompts and saves a transcript and a report.</p>
 
       <h3>4. Technical Notes</h3>
-      <p>The prototype runs locally and calls OpenRouter (Kimi or DeepSeek). The API key lives only in a local <code>.env</code> file that is gitignored and is never committed. The repo is public. If the app is ever hosted publicly, the key will need to sit behind a small proxy, not in the site's code.</p>
+      <p>The prototype runs locally and calls OpenRouter (DeepSeek for the roommates; DeepSeek, Claude Haiku and Gemini Flash as graders). The API key lives only in a local <code>.env</code> file that is gitignored and is never committed. The repo is public. If the app is ever hosted publicly, the key will need to sit behind a small proxy, not in the site's code.</p>
       <h3>5. Unit Economics & Analytics Snapshot</h3>
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">$11.12</div>
+          <div class="stat-value">at least $11.17</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
-          <div class="stat-value">TBD</div>
+          <div class="stat-value">$0.0039</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">User Evidence (Analytics from Build 2)</div>
@@ -241,9 +249,10 @@
       <div class="log-entry">
         <h3>Build 2 · Smallest Local Version & PostHog (Due Nov 16)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [Local working slice, PostHog verified on this page and the local app, PRD v2, and local setup in AGENTS.md]</li>
-          <li><strong>What broke / changed in PRD:</strong> [Fill in]</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>What shipped:</strong> A 15-question yes/no rubric replaced the 0-100 grade: three graders, a quote evidence check, majority vote, score computed in code. Also a config module, a resident openness tagger, an app mode check, and a mock that follows the real prompts. An automated tester (simulate and report tools) with ten simulated RA personas; 8 of the 10 have been run live (side-taker and minimal have not). PRD v2 is in this page, and local setup and known gaps are in AGENTS.md. Live run screenshots are linked in the Product Showcase. PostHog is in the snippet on this page and in public/index.html. Automated tests: 142 passing in 17 files. Not done yet: voice, retry for failed calls, cost in the debrief, and any change to the residents. The realism fixes are written up in RESIDENT-NOTES.md but no code was changed. [PostHog events seen in the dashboard: confirm.]</li>
+          <li><strong>Things learned with AI:</strong> Graders: asking for yes/no with a required quote gave answers code could check, and the evidence check changed 4 YES answers for DeepSeek, 1 for Claude and 0 for Gemini. The graders disagreed on 34 of 120 questions (28.3%). Claude was much stricter on two personas (average: DeepSeek 9, Claude 3, Gemini 7; typo-good: 13, 6, 13), and Gemini gave solution-pusher 3 when the others gave 0. The same model plays residents and grades as Grader 1, and I have not measured whether that biases it. Simulated RA: 4 of 7 personas with a range landed in range; strong scored 7 against 12-15, rushed-good 5 against 8-11, solution-pusher 0 against 1-4. One session per persona is a first signal, not a measure. Resident realism (RESIDENT-NOTES.md, 8 transcripts): the two RAs that scored 0 of 15 (solution-pusher, hostile) and the injection run still ended with both residents agreeing, the same as typo-good at 13. The notes point to the turn 4 and turn 6 pressure lines in the mediation prompt. 54 of 60 replies open with "Sam," or "RA,", 52 of 60 have 3 or 4 sentences, and 43 of 60 use the word "compromise".</li>
+          <li><strong>What broke / changed in PRD:</strong> [what went wrong this week and how I fixed it] PRD changes already on this page: scoring changed from a 0-100 grade to the 15-question rubric with an evidence check; the riskiest assumption now says the roommates and graders may not be realistic or fair enough to trust, and is tested by the automated tester; voice moved from in scope to planned after testing; the architecture note no longer says "Kimi or DeepSeek" and names the models actually used.</li>
+          <li><strong>Cost & time this week:</strong> at least $11.17 cumulative (Build 1 total $11.12 plus $0.0475 for the 8 automated test sessions in transcripts/index.csv; live tests and coding sessions are not in the CSV) · [hours] hours. Cost per user session measured at $0.0039 (residents plus graders). Commits on Nov 15 (two commits; the earlier commits are from Nov 1, 7 and 9).</li>
         </ul>
       </div>
 
