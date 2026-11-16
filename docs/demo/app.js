@@ -1,19 +1,9 @@
-import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, parseGrading, computeOverallScore, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
+import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, cleanResponse, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
 import { mockResponse } from "./mock.js";
+import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { RUBRIC, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
-// Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
-const MAIN_MODEL = "deepseek/deepseek-chat";
-const GRADER_MODELS = [
-  { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  { id: "google/gemini-2.5-flash",     name: "Gemini" },
-];
-const CONSOLIDATOR_MODEL = "deepseek/deepseek-chat";
-const TOKENS_RESIDENT = 150;
-const TOKENS_GRADER = 600;
-const TOKENS_CONSOLIDATOR = 700;
-const MAX_TURNS = 10;
 // ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
 const MOCK = isMockMode(location.hostname, location.search);
 if (MOCK) document.getElementById("demo-banner").hidden = false;
@@ -44,51 +34,11 @@ const DOM = {
   restartBtn: $("restart-btn"), turnCounter: $("turn-counter"),
 };
 
-let session = {
-  raName: "", topic: "noise", difficulty: "medium",
-  turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-  agreementNoticeShown: false,
-};
+let session = createSession();
 
 /* ============================================================
-   PROFILES
+   CARDS
    ============================================================ */
-
-function getProfiles(topic, difficulty) {
-  const traits = {
-    easy:   { alex: "annoyed but open", jordan: "defensive but reasonable" },
-    medium: { alex: "frustrated, exhausted", jordan: "defensive, feels attacked" },
-    hard:   { alex: "at breaking point", jordan: "angry, shutting down" },
-  };
-  const stances = {
-    noise: {
-      alex: "Jordan's noise past midnight prevents sleep. Early classes are suffering.",
-      jordan: "Evening classes mean late nights. Alex expects silence at 9pm, which is unrealistic.",
-    },
-    cleaning: {
-      alex: "Jordan never cleans. Shared spaces are a mess. Alex does all the work.",
-      jordan: "Alex rearranges Jordan's things without asking. The standard is obsessive, not fair.",
-    },
-    "guest policy": {
-      alex: "Jordan's partner stays over 4 nights a week. Alex never agreed to a third roommate.",
-      jordan: "Alex is never here. The guest is quiet and respectful. This is not a real problem.",
-    },
-    hygiene: {
-      alex: "Jordan's laundry piles up for weeks. The smell is embarrassing when anyone visits.",
-      jordan: "Alex's scented products give Jordan headaches. Requests to change them were ignored.",
-    },
-    "shared items": {
-      alex: "Jordan borrows food, chargers, clothes without asking. Nothing gets replaced.",
-      jordan: "Alex labels everything. Sharing was supposed to be part of living together.",
-    },
-  };
-  const t = traits[difficulty] || traits.medium;
-  const s = stances[topic] || stances.noise;
-  return {
-    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex },
-    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan},
-  };
-}
 
 function renderCards(profiles) {
   DOM.residentCards.innerHTML = `
@@ -104,101 +54,6 @@ function renderCards(profiles) {
       <div class="card-trait">${profiles.jordan.trait}</div>
       <div class="card-stance">${profiles.jordan.stance}</div>
     </div>`;
-}
-
-/* ============================================================
-   PROMPTS
-   ============================================================ */
-
-function alexPrompt(topic, difficulty, profile) {
-  return `You are Alex. ${profile.alex.meta}. ${profile.alex.trait} Currently ${profile.alex.mood}.
-
-The issue: ${profile.alex.stance}
-
-RULES:
-- Output EXACTLY 2 paragraphs, separated by one blank line.
-- Paragraph 1 must be exactly 2 sentences.
-- Paragraph 2 must be exactly 2 sentences.
-- Paragraph 1: Introduce yourself and state the problem.
-- Paragraph 2: Say how it affects you and ask the RA one question.
-- Do NOT use em dashes. Use periods only.
-- Do NOT write more than 4 sentences total.
-- Do NOT write one long paragraph.
-- Do NOT mention Jordan.
-- Do NOT prefix with "Alex:".`;
-}
-
-function jordanPrompt(topic, difficulty, profile, alexMsg) {
-  return `You are Jordan. ${profile.jordan.meta}. ${profile.jordan.trait} Currently ${profile.jordan.mood}.
-
-The issue: ${profile.jordan.stance}
-
-Alex said: "${alexMsg}"
-
-RULES:
-- Output EXACTLY 2 paragraphs, separated by one blank line.
-- Paragraph 1 must be exactly 2 sentences.
-- Paragraph 2 must be exactly 2 sentences.
-- Paragraph 1: Introduce yourself and state your side.
-- Paragraph 2: Push back without hostility. End with how you feel.
-- Do NOT use em dashes. Use periods only.
-- Do NOT write more than 4 sentences total.
-- Do NOT write one long paragraph.
-- Do NOT prefix with "Jordan:".`;
-}
-
-function graderPrompt(topic, difficulty, history) {
-  const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-  return `Grade this RA mediation practice session.
-
-IMPORTANT: Grade ONLY the MEDIATOR (the RA). Never grade the residents.
-
-Situation: ${topic}   Difficulty: ${difficulty}
-
-TRANSCRIPT:
-${transcript}
-
-Respond EXACTLY in this format with NO extra text before or after:
-SCORE: [number]/100
-STRENGTHS:
-- [specific mediator strength]
-- [specific mediator strength]
-GAPS:
-- [specific mediator gap]
-- [specific mediator gap]
-
-Rules:
-- Score 70-100 if mediator listened, validated, and proposed solutions.
-- Score 40-69 if mediator tried but missed key steps.
-- Score 0-39 if mediator did very little or took sides.
-- NO em dashes.`;
-}
-
-function consolidatorPrompt(gradings, overall) {
-  const valid = gradings.filter(gr => gr.score !== null);
-  const g = valid.map((gr, i) => `GRADER ${i + 1} (${gr.model}): ${gr.score}/100\nStrengths:\n${gr.strengths.map(s => "- " + s).join("\n")}\nGaps:\n${gr.gaps.map(x => "- " + x).join("\n")}`).join("\n\n---\n\n");
-  return `${valid.length} AI supervisor(s) graded the same RA mediation. The overall score is ${overall}/100 and is already computed. Consolidate the feedback into one debrief.
-
-${g}
-
-Output EXACTLY the following sections. Do NOT output any score line or number out of 100.
-
-WHAT YOU DID WELL:
-- [specific action with transcript reference]
-- [specific action with transcript reference]
-- [specific action with transcript reference]
-
-WHAT YOU MISSED:
-- [specific gap with what to do instead]
-- [specific gap with what to do instead]
-- [specific gap with what to do instead]
-
-ONE THING TO TRY NEXT TIME:
-- [one concrete technique]
-
-Rules:
-- NO em dashes. Periods, commas, colons, hyphens only.
-- ALL feedback about the MEDIATOR only.`;
 }
 
 /* ============================================================
@@ -254,7 +109,7 @@ function setInput(enabled) {
    API
    ============================================================ */
 
-async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
+async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }) {
   let data;
   if (MOCK) {
     await new Promise(r => setTimeout(r, 150));
@@ -263,7 +118,7 @@ async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildRequestBody(model, messages, maxTokens)),
+      body: JSON.stringify(buildRequestBody(model, messages, opts)),
     });
     try {
       data = await res.json();
@@ -276,39 +131,12 @@ async function call(model, messages, maxTokens = TOKENS_RESIDENT) {
   if (data.choices?.[0]?.finish_reason === "length") {
     console.warn(`[call] Model ${model} response truncated (finish_reason: length)`);
   }
-  return extractContent(data);
-}
-
-/* ============================================================
-   TEXT PROCESSING
-   ============================================================ */
-
-function sanitize(text) {
-  return text
-    .replace(/[\u2014\u2013]/g, " - ")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2026]/g, "...")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function enforce2Paragraphs(text) {
-  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
-  if (paragraphs.length <= 2) return text;
-  // Merge all middle paragraphs into paragraph 2
-  const first = paragraphs[0];
-  const rest = paragraphs.slice(1).join(" ");
-  return first + "\n\n" + rest;
-}
-
-function cleanResponse(raw) {
-  let t = raw;
-  const m = t.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
-  if (m) t = m[1];
-  t = sanitize(t);
-  t = enforce2Paragraphs(t);
-  return t;
+  try {
+    return extractContent(data);
+  } catch (e) {
+    e.finishReason = data.choices?.[0]?.finish_reason;
+    throw e;
+  }
 }
 
 /* ============================================================
@@ -451,31 +279,25 @@ async function end() {
   DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
 
   try {
+    const prompt = buildRubricPrompt(session.topic, session.difficulty, session.turnHistory, session.raName);
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: graderPrompt(session.topic, session.difficulty, session.turnHistory) }], TOKENS_GRADER);
+          const raw = await call(g.id, [{ role: "system", content: prompt }], GRADER_OPTS);
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
-          const parsed = parseGrading(raw, g.name);
-          console.log(`[Grader ${g.name} PARSED]:`, parsed);
-          return parsed;
+          const parsed = parseRubricReply(raw);
+          if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
+          const verified = verifyEvidence(parsed.answers, session.turnHistory);
+          if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO, quote not found in RA messages: Q${verified.changed.join(", Q")}`);
+          return { name: g.name, ok: true, answers: verified.answers };
         } catch (e) {
-          console.error(`[Grader ${g.name} FAILED]:`, e.message);
-          return { model: g.name, score: null, strengths: ["Grading failed: " + e.message], gaps: ["Check API key or model availability"] };
+          const finish = e.finishReason ?? "none (no reply received)";
+          console.error(`[Grader ${g.name} FAILED]: ${e.message} (finish_reason: ${finish})`);
+          return { name: g.name, ok: false, answers: {}, error: `${e.message} (finish_reason: ${finish})` };
         }
       })
     );
-
-    renderGraderCards(results);
-
-    DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Consolidating feedback...</div></div>';
-    const overall = computeOverallScore(results);
-    if (overall === null) {
-      DOM.consolidated.innerHTML = '<div class="section-block"><div class="score-display"><div class="score-label">Overall score unavailable</div></div><p>All graders failed, so there is no feedback to consolidate.</p></div>';
-      return;
-    }
-    const consolidatedRaw = await call(CONSOLIDATOR_MODEL, [{ role: "system", content: consolidatorPrompt(results, overall) }], TOKENS_CONSOLIDATOR);
-    renderConsolidated(consolidatedRaw, overall);
+    renderDebrief(results);
   } catch (err) {
     DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
     console.error(err);
@@ -486,66 +308,53 @@ async function end() {
    GRADING
    ============================================================ */
 
-function renderGraderCards(gradings) {
-  DOM.graderCards.innerHTML = gradings.map(g => `
-    <div class="grader-card">
-      <div class="grader-name">${g.model}</div>
-      ${g.score === null
-        ? '<div class="grader-note">grader unavailable</div>'
-        : `<div class="grader-score">${g.score}</div><div class="grader-note">out of 100</div>`}
-      <ul>${g.strengths.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
-      <div class="grader-note" style="margin-top:8px;">Gaps:</div>
-      <ul>${g.gaps.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
-    </div>
-  `).join("");
-}
+const REFLECTION_QUESTIONS = [
+  "Would this conflict need to be escalated to your BLT? Why or why not?",
+  "How would you manage this incident differently if there were communication barriers between roommates?",
+];
 
-function renderConsolidated(raw, overall) {
-  const lines = raw.split("\n");
-  let sections = [];
-  let cur = null;
+function renderDebrief(results) {
+  const valid = results.filter(r => r.ok);
+  DOM.graderCards.innerHTML = results.map(r => `
+    <div class="grader-chip${r.ok ? "" : " failed"}">
+      <span class="grader-name">${esc(r.name)}</span>
+      <span class="grader-detail">${r.ok ? `${Object.values(r.answers).filter(a => a.yes).length} of ${RUBRIC.length} met` : esc(r.error)}</span>
+    </div>`).join("");
 
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t) continue;
+  let html = "";
+  if (valid.length === 0) {
+    html += '<div class="score-display"><div class="score-label">Score unavailable</div></div>';
+  } else {
+    const combined = combineGraders(results);
+    const { met, total, score } = scoreFromCombined(combined);
+    html += `<div class="score-display"><div class="score-number">${met} of ${total}</div><div class="score-label">${score}% of checklist items met</div>`;
+    if (valid.length < 2) html += `<div class="grader-note">Score based on ${valid.length} grader${valid.length === 1 ? "" : "s"}</div>`;
+    html += "</div>";
 
-    if (/^OVERALL SCORE:/i.test(t)) {
-      continue; // score comes from code, never from the model
-    } else if (/^WHAT YOU DID WELL:/i.test(t)) {
-      cur = { type: "well", items: [], title: "What You Did Well" };
-      sections.push(cur);
-    } else if (/^WHAT YOU MISSED:/i.test(t)) {
-      cur = { type: "missed", items: [], title: "What You Missed" };
-      sections.push(cur);
-    } else if (/^ONE THING TO TRY NEXT TIME:/i.test(t)) {
-      cur = { type: "next", items: [], title: "One Thing to Try Next Time" };
-      sections.push(cur);
-    } else if ((t.startsWith("- ") || t.startsWith("* ")) && cur) {
-      cur.items.push(t.slice(2));
-    } else if (cur && cur.items.length === 0) {
-      // First line of a section that doesn't start with dash (e.g., ONE THING body)
-      cur.items.push(t);
-    } else if (cur) {
-      // Continuation of previous bullet or text block
-      cur.items[cur.items.length - 1] += " " + t;
+    const groups = [...new Set(RUBRIC.map(q => q.group))];
+    for (const group of groups) {
+      html += `<div class="section-block"><h3>${esc(group)}</h3><ul class="rubric-list">`;
+      for (const q of RUBRIC.filter(x => x.group === group)) {
+        const c = combined.find(x => x.id === q.id);
+        const agree = c.met ? c.votes : valid.length - c.votes;
+        html += `<li class="rubric-item ${c.met ? "met" : "missed"}">
+          <span class="rubric-mark" aria-label="${c.met ? "Met" : "Missed"}">${c.met ? "\u2713" : "\u2717"}</span>
+          <div class="rubric-body">
+            <div class="rubric-q">${esc(q.text)}</div>
+            ${c.met
+              ? `<div class="rubric-evidence">You said: "${esc(c.quote)}"</div>`
+              : `<div class="rubric-tip">Tip: ${esc(q.tip)}</div>`}
+            <div class="rubric-agree">${agree} of ${valid.length} grader${valid.length === 1 ? "" : "s"} said ${c.met ? "yes" : "no"}</div>
+          </div></li>`;
+      }
+      html += "</ul></div>";
     }
+
+    const { nextTip } = coachingSummary(combined);
+    html += `<div class="section-block"><h3>One thing to try next time</h3><p>${nextTip ? esc(nextTip) : "You met every item on the checklist. Keep doing what you did."}</p></div>`;
   }
 
-  let html = `<div class="score-display"><div class="score-number">${overall}/100</div><div class="score-label">Overall Score</div></div>`;
-  for (const s of sections) {
-    if (s.type === "next") {
-      html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
-    } else if (s.items.length > 0) {
-      html += `<div class="section-block"><h3>${s.title}</h3><ul>${s.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
-    } else {
-      html += `<div class="section-block"><h3>${s.title}</h3><p>${esc(s.title)} section empty</p></div>`;
-    }
-  }
-
-  if (sections.length === 0) {
-    html = `<div class="section-block"><pre style="font-size:12px;white-space:pre-wrap">${esc(raw)}</pre></div>`;
-  }
-
+  html += `<div class="section-block"><h3>Reflection (not scored)</h3><ul>${REFLECTION_QUESTIONS.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>`;
   DOM.consolidated.innerHTML = html;
 }
 

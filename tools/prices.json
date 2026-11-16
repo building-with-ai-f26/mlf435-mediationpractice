@@ -1,0 +1,6 @@
+{
+  "_note": "USD per million tokens. Fill in from openrouter.ai/models. Used only when the API response has no usage.cost. null means unknown.",
+  "deepseek/deepseek-chat":     { "prompt_per_million": null, "completion_per_million": null },
+  "anthropic/claude-haiku-5.5": { "prompt_per_million": null, "completion_per_million": null },
+  "google/gemini-2.5-flash":    { "prompt_per_million": null, "completion_per_million": null }
+}

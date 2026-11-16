@@ -11,8 +11,13 @@ export function getResponder(raText, lastSpeaker) {
   return lastSpeaker === "Alex" ? "Jordan" : "Alex";
 }
 
-export function buildRequestBody(model, messages, maxTokens) {
-  return { model, messages, temperature: 0.8, max_tokens: maxTokens };
+// opts: { maxTokens, temperature, reasoning }. Residents use 0.8 / 150. Graders pass their own values.
+// reasoning is only added when given, so resident and consolidator requests are unchanged.
+export function buildRequestBody(model, messages, opts = {}) {
+  const { maxTokens = 150, temperature = 0.8, reasoning } = opts;
+  const body = { model, messages, temperature, max_tokens: maxTokens };
+  if (reasoning) body.reasoning = reasoning;
+  return body;
 }
 
 export function extractContent(data) {
@@ -24,6 +29,36 @@ export function extractContent(data) {
     throw new Error("Empty model response");
   }
   return content.trim();
+}
+
+// ---- Reply cleaning (resident replies) ----
+
+function sanitize(text) {
+  return text
+    .replace(/[\u2014\u2013]/g, " - ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2026]/g, "...")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function enforce2Paragraphs(text) {
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
+  if (paragraphs.length <= 2) return text;
+  // Merge all middle paragraphs into paragraph 2
+  const first = paragraphs[0];
+  const rest = paragraphs.slice(1).join(" ");
+  return first + "\n\n" + rest;
+}
+
+export function cleanResponse(raw) {
+  let t = raw;
+  const m = t.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
+  if (m) t = m[1];
+  t = sanitize(t);
+  t = enforce2Paragraphs(t);
+  return t;
 }
 
 export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile) {
@@ -61,42 +96,6 @@ export function commitTurn(session, raEntry, speaker, replyText) {
   session.turnHistory.push(raEntry, { sender: speaker, text: replyText });
   session.turnCount += 1;
   session.lastSpeaker = speaker;
-}
-
-// Parse a grader reply. score is null when no SCORE line is found, so a broken
-// grader is never mistaken for a real zero.
-export function parseGrading(raw, name) {
-  const text = String(raw || "");
-  const scoreMatch = text.match(/SCORE[:\s]+(\d+)/i);
-  const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
-  const strengths = [];
-  const gaps = [];
-  let section = null;
-  for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (/^STRENGTHS[:\s]/i.test(t)) { section = "s"; continue; }
-    if (/^GAPS[:\s]/i.test(t)) { section = "g"; continue; }
-    if ((t.startsWith("- ") || t.startsWith("* ")) && section) {
-      (section === "s" ? strengths : gaps).push(t.slice(2));
-    }
-  }
-  return {
-    model: name,
-    score,
-    strengths: strengths.length ? strengths : ["(No specific strengths parsed)"],
-    gaps: gaps.length ? gaps : ["(No specific gaps parsed)"],
-  };
-}
-
-// Average of the graders that returned a numeric score. Each is clamped to 0..100.
-// Returns null when no grader succeeded.
-export function computeOverallScore(gradings) {
-  const scores = gradings
-    .map(g => g && g.score)
-    .filter(s => typeof s === "number" && Number.isFinite(s))
-    .map(s => Math.min(100, Math.max(0, s)));
-  if (scores.length === 0) return null;
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
 }
 
 // ---- Agreement detection ----

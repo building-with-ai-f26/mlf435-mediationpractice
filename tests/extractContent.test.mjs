@@ -33,3 +33,11 @@ test("missing message throws", () => {
 test("empty object throws", () => {
   assert.throws(() => extractContent({}), /Empty model response/);
 });
+
+import { cleanResponse } from "../public/logic.js";
+
+test("cleanResponse strips a bold name prefix, swaps dashes and curly quotes, and keeps 2 paragraphs", () => {
+  assert.equal(cleanResponse("**Alex** I\u2019m tired \u2014 really."), "I'm tired  -  really.");
+  assert.equal(cleanResponse("one\n\ntwo\n\nthree\n\nfour"), "one\n\ntwo three four");
+  assert.equal(cleanResponse("plain text"), "plain text");
+});

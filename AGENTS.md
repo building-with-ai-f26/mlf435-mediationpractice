@@ -4,7 +4,7 @@
 
 ## 1. Project Overview
 - **What this repo builds:** A local web application that lets Resident Assistants practice mediating roommate conflicts with AI residents. The RA picks a topic and difficulty, mediates between two AI roommates via text (voice in v2), and receives a graded debrief from 3 AI models.
-- **Primary user & core workflow:** A current RA on the builder's Housing Team. Workflow: setup (name, topic, difficulty) → context cards → Alex introduces → Jordan introduces → RA mediates (turn-based) → end session → 3 AI graders + consolidated feedback.
+- **Primary user & core workflow:** A current RA on the builder's Housing Team. Workflow: setup (name, topic, difficulty) → context cards → Alex introduces → Jordan introduces → RA mediates (turn-based) → end session → 3 AI graders answer a 15-question yes/no rubric; code verifies quotes, votes and scores.
 - **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (DeepSeek, Claude Haiku, Gemini Flash)
 
 ## 2. Commands
@@ -21,7 +21,9 @@
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
 - `public/app.js` — All frontend logic: prompts, API calls, turn management, debrief rendering.
 - `public/logic.js` — Pure, testable logic (ES module): routing, prompts, grading parse, agreement check.
-- `public/mock.js` — Canned replies for `?mock=1`. It does not import the real prompts. The intro, grader and consolidator prompt text is copied into it, so prompt edits in `app.js` or `logic.js` must be mirrored there. `tests/mock.test.mjs` builds mediation prompts with the real `mediationPrompt`, but its grader and consolidator inputs are hand-written and intros are not tested, so it does not catch drift in the copied text.
+- `public/config.js` — No-DOM settings and builders: model ids, token constants, `getProfiles`, resident intro prompts, `createSession()`. Imported by `app.js`, `mock.js` and tests.
+- `public/rubric.js` — The 15-question rubric and pure functions: prompt, parse, quote verification, grader voting, score, coaching.
+- `public/mock.js` — Canned replies for `?mock=1`. It imports `getProfiles` from `config.js` to read the difficulty from the real mood text. Prompt detection (intro, mediation, rubric) still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
 - `tests/` — Deterministic tests for `node --test tests/`.
 - `.env` — `OPENROUTER_API_KEY=sk-or-v1-...` (NEVER commit)
 - `docs/index.html` — Product Page / Living PRD (GitHub Pages from `/docs`)
@@ -39,9 +41,8 @@
 | Grader 1 | `deepseek/deepseek-chat` | OpenRouter |
 | Grader 2 | `anthropic/claude-haiku-5.5` | OpenRouter |
 | Grader 3 | `google/gemini-2.5-flash` | OpenRouter |
-| Consolidator | `deepseek/deepseek-chat` | OpenRouter |
 
-Model IDs must match in three places: `MAIN_MODEL`, `GRADER_MODELS` and `CONSOLIDATOR_MODEL` in `public/app.js`, and `ALLOWED_MODELS` in `server.mjs`. The server rejects any model not on its allowlist, so update all of them together.
+Model IDs must match in three places: `MAIN_MODEL` and `GRADER_MODELS` in `public/app.js`, and `ALLOWED_MODELS` in `server.mjs`. The server rejects any model not on its allowlist, so update all of them together.
 
 ## 6. Non-Negotiable Engineering Rules
 1. **Plan before coding:** Before touching multiple files, propose a brief plan and wait for approval.

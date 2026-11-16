@@ -3,11 +3,11 @@ import fs from "fs";
 import path from "path";
 import { URL } from "url";
 import { isOriginAllowed } from "./origins.mjs";
+import { validateChatBody } from "./chatBody.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const ALLOWED_ORIGIN = `http://localhost:${PORT}`;
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_TOKENS_CAP = 1000;
 
 // Keep in sync with public/app.js (MAIN_MODEL, GRADER_MODELS, CONSOLIDATOR_MODEL). The two lists must match.
 const ALLOWED_MODELS = new Set([
@@ -154,22 +154,8 @@ const server = http.createServer((req, res) => {
       } catch {
         return sendJsonError(res, 400, "Invalid JSON");
       }
-      if (!input || typeof input !== "object" || Array.isArray(input)) {
-        return sendJsonError(res, 400, "Invalid request");
-      }
-      if (typeof input.model !== "string" || !ALLOWED_MODELS.has(input.model)) {
-        return sendJsonError(res, 400, "Model not allowed");
-      }
-      if (!Array.isArray(input.messages) || input.messages.length === 0) {
-        return sendJsonError(res, 400, "messages must be a non-empty array");
-      }
-      const maxTokens = Number.isFinite(input.max_tokens) && input.max_tokens > 0
-        ? Math.min(Math.floor(input.max_tokens), MAX_TOKENS_CAP)
-        : 200;
-      const clean = { model: input.model, messages: input.messages, max_tokens: maxTokens };
-      if (Number.isFinite(input.temperature)) {
-        clean.temperature = Math.min(Math.max(input.temperature, 0), 2);
-      }
+      const { clean, error } = validateChatBody(input, ALLOWED_MODELS);
+      if (error) return sendJsonError(res, 400, error);
       try {
         const { status, ok, data } = await proxyToOpenRouter(clean);
         if (!ok) {

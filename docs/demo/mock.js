@@ -1,6 +1,9 @@
 // Mock mode (?mock=1). Returns canned OpenAI-shaped responses so the whole flow
 // works with zero API calls. Pure: no DOM, window, or fetch.
-// Detection depends on prompt text in app.js and logic.js. tests/mock.test.mjs catches drift.
+// Detection depends on prompt text in config.js, logic.js and rubric.js. tests/mock.test.mjs
+// builds the real prompts and checks they are still recognised, so drift fails a test.
+
+import { getProfiles } from "./config.js";
 
 const INTRO = {
   alex: {
@@ -52,41 +55,55 @@ const REPLY = {
   },
 };
 
-const GRADES = {
-  easy: { score: 82, s: ["You stayed neutral and asked open questions to both residents.", "You restated each side before moving to solutions."], g: ["You could have set ground rules at the start.", "You did not ask for a specific time commitment."] },
-  medium: { score: 72, s: ["You listened to both residents and named their feelings.", "You moved toward a concrete compromise."], g: ["You let one resident dominate a few turns.", "You did not summarize the agreement at the end."] },
-  hard: { score: 61, s: ["You stayed calm when a resident pushed back.", "You kept both residents in the conversation."], g: ["You moved to solutions before the residents felt heard.", "You did not name the tension in the room."] },
+// Which rubric questions each mock grader answers YES to. They differ on purpose,
+// so the debrief shows a mix of 3 of 3, 2 of 3 and 1 of 3 agreement.
+const MOCK_YES = {
+  "deepseek/deepseek-chat": [1, 3, 4, 6, 8, 9, 10, 11, 12],
+  "anthropic/claude-haiku-5.5": [1, 3, 4, 5, 8, 9, 10, 11, 13, 14],
+  "google/gemini-2.5-flash": [1, 2, 3, 4, 8, 9, 10, 12, 15],
 };
+
+// Quote the first 12 words of a real RA line from the prompt's transcript, so evidence checks pass.
+// If the RA wrote nothing, every answer is NO.
+function mockRubricReply(prompt, model) {
+  const quotes = prompt.split("\n")
+    .filter(l => l.startsWith("RA: "))
+    .map(l => l.slice(4).trim().split(/\s+/).slice(0, 12).join(" "))
+    .filter(Boolean);
+  const yes = MOCK_YES[model] || MOCK_YES["deepseek/deepseek-chat"];
+  const lines = [];
+  for (let id = 1; id <= 15; id++) {
+    const i = yes.indexOf(id);
+    lines.push(i >= 0 && quotes.length ? `Q${id}: YES | ${quotes[i % quotes.length]}` : `Q${id}: NO`);
+  }
+  return lines.join("\n");
+}
 
 function promptText(messages) {
   return (messages || []).map(m => String(m.content || "")).join("\n");
 }
 
+// The resident prompts embed each difficulty's mood text, taken from the real getProfiles().
 function difficultyFromMood(prompt) {
-  if (/breaking point|angry, shutting down/i.test(prompt)) return "hard";
-  if (/annoyed but open|defensive but reasonable/i.test(prompt)) return "easy";
+  const text = prompt.toLowerCase();
+  for (const d of ["hard", "easy"]) {
+    const p = getProfiles("noise", d);
+    if (text.includes(p.alex.mood.toLowerCase()) || text.includes(p.jordan.mood.toLowerCase())) return d;
+  }
   return "medium";
 }
 
 // Which kind of prompt is this? Exported so tests can check detection.
 export function classifyPrompt(prompt) {
-  if (/Grade this RA mediation/i.test(prompt)) return "grader";
-  if (/Consolidate the feedback/i.test(prompt)) return "consolidator";
+  if (/Score this RA mediation practice session with a yes\/no checklist/i.test(prompt)) return "rubric";
   if (/Introduce yourself/i.test(prompt)) return /^You are Jordan\./.test(prompt) ? "jordan-intro" : "alex-intro";
   if (/^You are (Alex|Jordan)\./.test(prompt) && /CONVERSATION:/.test(prompt)) return "mediation";
   return "unknown";
 }
 
-function mockText(prompt) {
+function mockText(prompt, model) {
   const kind = classifyPrompt(prompt);
-  if (kind === "grader") {
-    const d = (prompt.match(/Difficulty:\s*(easy|medium|hard)/i) || [])[1] || "medium";
-    const g = GRADES[d.toLowerCase()];
-    return `SCORE: ${g.score}/100\nSTRENGTHS:\n${g.s.map(x => "- " + x).join("\n")}\nGAPS:\n${g.g.map(x => "- " + x).join("\n")}`;
-  }
-  if (kind === "consolidator") {
-    return "WHAT YOU DID WELL:\n- You listened to both residents and named their feelings.\n- You asked open questions before proposing anything.\n- You steered both residents toward a specific plan.\n\nWHAT YOU MISSED:\n- You could have set ground rules at the start of the session.\n- You did not summarize the final agreement out loud.\n- You let one resident talk longer than the other.\n\nONE THING TO TRY NEXT TIME:\n- Restate each side in one sentence before suggesting any solution.";
-  }
+  if (kind === "rubric") return mockRubricReply(prompt, model);
   const mood = difficultyFromMood(prompt);
   if (kind === "alex-intro") return INTRO.alex[mood];
   if (kind === "jordan-intro") return INTRO.jordan[mood];
@@ -102,7 +119,7 @@ function mockText(prompt) {
 // Same shape as an OpenRouter chat completion, including usage.
 export function mockResponse(model, messages) {
   const prompt = promptText(messages);
-  const content = mockText(prompt);
+  const content = mockText(prompt, model);
   const promptTokens = Math.ceil(prompt.length / 4);
   const completionTokens = Math.ceil(content.length / 4);
   return {
