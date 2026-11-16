@@ -5,17 +5,18 @@ import path from "path";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
-import { MAIN_MODEL, GRADER_MODELS, GRADER_OPTS, TOKENS_RESIDENT, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
-import { getResponder, commitTurn, mediationPrompt, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
+import { MAIN_MODEL, GRADER_MODELS, GRADER_OPTS, TOKENS_RESIDENT, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
+import { getResponder, commitTurn, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined } from "../public/rubric.js";
 import { mockResponse } from "../public/mock.js";
 
 export const SCHEMA_VERSION = 1;
-export const SCENARIOS = ["noise", "cleaning", "guest policy", "hygiene", "shared items"];
+export const SCENARIOS = ["noise", "cleaning", "guest policy", "hygiene", "shared items", "religious practice"];
 export const DIFFICULTIES = ["easy", "medium", "hard"];
 export const RA_NAME = "Sam";
 const RA_OPTS = { maxTokens: 200, temperature: 0.9 };
-const ROLES = ["residents", "ra_sim", "graders"];
+const ROLES = ["residents", "ra_sim", "graders", "tagger"];
+const CSV_COST_ROLES = ["residents", "ra_sim", "graders"];
 
 export class BudgetError extends Error {}
 
@@ -66,7 +67,7 @@ export function indexLine(rec, file) {
     localDate(new Date(rec.createdAt)), file, rec.scenario, rec.difficulty, rec.persona.id,
     rec.result.met, rec.result.score,
     ...GRADER_MODELS.map(g => (byName[g.name]?.ok ? byName[g.name].metCount : null)),
-    ...ROLES.map(r => rec.cost[r].usd),
+    ...CSV_COST_ROLES.map(r => rec.cost[r].usd),
   ];
   return cells.map(csv).join(",");
 }
@@ -119,7 +120,7 @@ export function summarizeLedger(ledger) {
     const known = roles.every(r => cost[r].known);
     return { usd: known ? roles.reduce((s, r) => s + cost[r].usd, 0) : null, known };
   };
-  cost.user_session = sum(["residents", "graders"]);
+  cost.user_session = sum(["residents", "tagger", "graders"]);
   cost.total = sum(ROLES);
   return { usage, cost };
 }
@@ -149,6 +150,9 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
   session.raName = RA_NAME; session.topic = scenario; session.difficulty = difficulty; session.active = true;
   const profiles = getProfiles(scenario, difficulty);
   session.profiles = profiles;
+  session.openness = startingOpenness(difficulty);
+  const openStart = { alex: session.openness.alex, jordan: session.openness.jordan };
+  const turnLog = [];
   const stamps = [];
   const add = (sender, text) => { session.turnHistory.push({ sender, text }); stamps.push(deps.now().toISOString()); };
 
@@ -166,7 +170,19 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     if (!text) throw new Error(`Empty RA message (finish_reason: ${r.finishReason})`);
     const raEntry = { sender: RA_NAME, text };
     const speaker = getResponder(text, session.lastSpeaker);
-    const reply = await resident(mediationPrompt(scenario, difficulty, [...session.turnHistory, raEntry], speaker, k, profiles));
+    // Tagger: an unreadable or failed reply leaves openness unchanged, same as the app.
+    let tags = null;
+    try {
+      const t = await track("tagger", TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS);
+      tags = parseTags(t.content);
+    } catch (e) {
+      if (e instanceof BudgetError) throw e;
+    }
+    const before = { alex: session.openness.alex, jordan: session.openness.jordan };
+    const openness = updateOpenness(session.openness, tags, difficulty);
+    const reply = await resident(mediationPrompt(scenario, difficulty, [...session.turnHistory, raEntry], speaker, k, profiles, openness[speaker.toLowerCase()]));
+    session.openness = openness;
+    turnLog.push({ turn: k, speaker, tags, openness_before: before, openness_after: { alex: openness.alex, jordan: openness.jordan } });
     stamps.push(deps.now().toISOString(), deps.now().toISOString());
     commitTurn(session, raEntry, speaker, reply);
   }
@@ -200,6 +216,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     persona: { id: persona.id, category: persona.category, expected: persona.expected, maxTurns },
     models: { resident: MAIN_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
     rubricVersion: RUBRIC_VERSION,
+    openness: { start: openStart, turns: turnLog },
     transcript: session.turnHistory.map((h, i) => ({ sender: h.sender, text: h.text, at: stamps[i] })),
     graders, combined, result, usage, cost,
   };

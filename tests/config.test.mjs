@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, getProfiles, createSession } from "../public/config.js";
+import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, TAGGER_MODEL, TAGGER_OPTS, getProfiles, createSession } from "../public/config.js";
 
 test("every model id is on the server allowlist", () => {
   const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
@@ -24,17 +24,45 @@ test("createSession returns a fresh object with the starting fields each time", 
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
     agreementNoticeShown: false,
+    openness: { alex: 0, jordan: 0, progress: { alex: 0, jordan: 0 } },
   });
   a.turnHistory.push({ sender: "x", text: "y" });
   assert.deepEqual(createSession().turnHistory, []);
 });
 
 test("getProfiles covers every topic and difficulty, and falls back for unknown ones", () => {
-  for (const topic of ["noise", "cleaning", "guest policy", "hygiene", "shared items"]) {
+  for (const topic of ["noise", "cleaning", "guest policy", "hygiene", "shared items", "religious practice"]) {
     for (const d of ["easy", "medium", "hard"]) {
       const p = getProfiles(topic, d);
       assert.ok(p.alex.stance && p.jordan.stance && p.alex.mood && p.jordan.mood);
     }
   }
   assert.deepEqual(getProfiles("nope", "nope"), getProfiles("noise", "medium"));
+});
+
+test("tagger uses Haiku with the grader's low-reasoning, temperature 0 settings and a small budget", () => {
+  assert.equal(TAGGER_MODEL, "anthropic/claude-haiku-5.5");
+  assert.deepEqual(TAGGER_OPTS, { maxTokens: 150, temperature: 0, reasoning: { enabled: false } });
+  const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes(`"${TAGGER_MODEL}"`));
+});
+
+test("religious practice profile uses only the given facts and keeps both residents respectful", () => {
+  const p = getProfiles("religious practice", "hard");
+  assert.match(p.alex.stance, /Muslim/);
+  assert.match(p.alex.stance, /prays quietly each night after Jordan goes to sleep/);
+  assert.match(p.alex.stance, /halal/);
+  assert.match(p.alex.stance, /few weeks/);
+  assert.match(p.alex.stance, /does not want tension/);
+  assert.match(p.alex.stance, /gives Alex space to share/);
+  assert.match(p.jordan.stance, /openly keeps bacon in the shared fridge/);
+  assert.match(p.alex.stance, /respectful/);
+  assert.match(p.jordan.stance, /respectful/);
+  assert.notDeepEqual(p, getProfiles("noise", "hard"));
+});
+
+test("setup list offers religious practice and the server-free topic list matches the profiles", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /<option value="religious practice">Religious Practice<\/option>/);
+  assert.equal((html.match(/<option value="[a-z ]+">[^<]*(Complaint|Dispute|Violation|Concern|Conflict|Practice)<\/option>/g) || []).length, 6);
 });

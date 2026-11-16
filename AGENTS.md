@@ -8,25 +8,57 @@
 - **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (DeepSeek, Claude Haiku, Gemini Flash)
 
 ## 2. Commands
-- **Install dependencies:** `cp .env.example .env` then add your OpenRouter key. No `npm install` needed.
-- **Run locally:** `node server.mjs` → open `http://localhost:3000`
-- **Run offline (no API calls):** open `http://localhost:3000/?mock=1` (canned replies and grades)
-- **Sync the hosted demo:** `scripts/sync-demo.sh` (rebuilds `docs/demo/` from `public/` for GitHub Pages; run it and commit `docs/demo/` after any change in `public/`)
-- **Run deterministic tests:** `node --test tests/`
-- **Run model evals:** Manual end-to-end session + debrief verification
+All commands run from the repository root with Node 20 or newer. There is no `package.json` and no `npm install`; the project uses only Node built-ins.
+
+- **Clean clone setup:**
+  ```bash
+  git clone <your-repo-url>
+  cd <your-repo-name>
+  node --version                # must print v20 or newer
+  cp .env.example .env          # then edit .env and replace the placeholder with your OpenRouter key
+  ```
+- **Start the server:** `node server.mjs`, then open `http://localhost:3000`. Run it from the repo root, because it reads `.env` from the current directory. It exits with an error if `.env` has no `OPENROUTER_API_KEY=` line. It listens on `127.0.0.1` only. Set `PORT=<number>` to use another port; the origin check follows it.
+- **Run offline (no API calls):** open `http://localhost:3000/?mock=1`. The browser uses canned replies and grades. The server still has to start, so `.env` needs a key line even in mock mode.
+- **Run tests:** `node --test tests/`. Deterministic and offline: 142 tests in 17 files.
+- **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 10.
+- **Simulate sessions:** `node tools/simulate.mjs [flags]`. Runs whole sessions (residents, simulated RA, tagger, three graders) directly against OpenRouter, not the local server. Live runs cost money and save one transcript per session under `transcripts/`. Flags, all optional:
+
+  | Flag | Default | Values |
+  |---|---|---|
+  | `--scenario` | `noise` | `noise`, `cleaning`, `guest policy`, `hygiene`, `shared items`, `religious practice` |
+  | `--difficulty` | `medium` | `easy`, `medium`, `hard` |
+  | `--persona` | `all` | `all`, or one of `strong`, `rushed-good`, `average`, `solution-pusher`, `side-taker`, `minimal`, `typo-good`, `nickname-both`, `hostile`, `injection` |
+  | `--runs` | `1` | whole number of at least 1, runs per persona |
+  | `--max-turns` | `8` | whole number of at least 1. Currently has no effect; see section 10 |
+  | `--ra-model` | `deepseek/deepseek-chat` | any OpenRouter model id for the simulated RA. Not checked against the server allowlist, because the tool calls OpenRouter directly |
+  | `--max-cost` | `1.00` | US dollars. Stops before the next call once known spend exceeds it |
+  | `--out` | `transcripts` | folder for saved transcripts and `index.csv` |
+  | `--dry` | off | no network; scripted RA lines and canned grader replies. Saves nothing unless `--out` is also given |
+
+  There is no `--help`. An unknown flag or bad value exits with an error. Safe check: `node tools/simulate.mjs --persona strong --dry`.
+- **Report saved runs:** `node tools/report.mjs [--dir transcripts] [--include-dry]`. Reads every saved transcript and prints: score by persona against its expected range, mean count by grader, YES answers the evidence check changed, grader disagreement, and mean cost. Dry-run records are skipped unless `--include-dry` is given. No `--help`.
+- **Sync the hosted demo:** `scripts/sync-demo.sh`. Deletes and rebuilds `docs/demo/` as a copy of `public/` for GitHub Pages. No flags. Commit `docs/demo/` after any change in `public/`.
+- **Run model evals:** Manual end-to-end session and debrief checks, plus `tools/simulate.mjs` and `tools/report.mjs` as above. See `tests/README.md` for the Build 4 tracks.
 
 ## 3. Architecture
-- `server.mjs` — Node.js proxy server. Serves static files from `/public` and proxies `/api/chat` to OpenRouter with the key from `.env`.
-- `public/index.html` — Single-page app with 3 views: setup, chat, debrief.
+- `server.mjs` — Node `http` server on `127.0.0.1`. Serves `public/` (GET and HEAD only) and forwards `POST /api/chat` to OpenRouter, adding the key from `.env`. Rejects models not in `ALLOWED_MODELS`, bodies over 64 KB, and requests with an unexpected Origin or Host.
+- `chatBody.mjs` — Validates the `/api/chat` body: model allowlist, non-empty messages, `max_tokens` (capped at 2000), temperature clamp, `reasoning` shape. Imported by `server.mjs`.
+- `origins.mjs` — The allowed origins, `localhost` and `127.0.0.1` on the server port. Imported by `server.mjs`.
+- `public/index.html` — Single-page app with 3 views: setup, chat, debrief. Loads the PostHog snippet (section 9).
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
-- `public/app.js` — All frontend logic: prompts, API calls, turn management, debrief rendering.
-- `public/logic.js` — Pure, testable logic (ES module): routing, prompts, grading parse, agreement check.
-- `public/config.js` — No-DOM settings and builders: model ids, token constants, `getProfiles`, resident intro prompts, `createSession()`. Imported by `app.js`, `mock.js` and tests.
-- `public/rubric.js` — The 15-question rubric and pure functions: prompt, parse, quote verification, grader voting, score, coaching.
-- `public/mock.js` — Canned replies for `?mock=1`. It imports `getProfiles` from `config.js` to read the difficulty from the real mood text. Prompt detection (intro, mediation, rubric) still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
-- `tests/` — Deterministic tests for `node --test tests/`.
+- `public/app.js` — Browser logic: setup, turn flow, calls to `/api/chat` (or mock replies), debrief rendering, analytics events.
+- `public/logic.js` — Pure, testable logic (ES module): responder routing, request body, reply cleanup, resident openness and tagger parsing, mediation prompt, agreement check, mock-mode flags.
+- `public/config.js` — No-DOM settings and builders: model ids (`MAIN_MODEL`, `GRADER_MODELS`, `TAGGER_MODEL`), token and option constants, `MAX_TURNS` (10), `getProfiles`, Alex and Jordan intro prompts, `createSession()`. Imported by `app.js`, `mock.js`, tests and `tools/`.
+- `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
+- `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
+- `tests/` — 17 `node:test` files, run with `node --test tests/`, plus `tests/README.md` (Build 4 evaluation tracks).
+- `tools/` — `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
+- `transcripts/` — Output of `tools/simulate.mjs`: `YYYY-MM-DD/HHMMSS-<scenario>-<difficulty>-<persona>.json`, plus `index.csv`. Read by `tools/report.mjs`.
+- `scripts/sync-demo.sh` — Rebuilds `docs/demo/` from `public/`.
+- `.env.example` — Placeholder only. Copy it to `.env`. `.env` is git-ignored and must never be committed.
 - `.env` — `OPENROUTER_API_KEY=sk-or-v1-...` (NEVER commit)
-- `docs/index.html` — Product Page / Living PRD (GitHub Pages from `/docs`)
+- `docs/index.html` — Product Page / Living PRD (GitHub Pages from `/docs`). `docs/demo/` is the generated copy of the app for the hosted mock demo.
+- `FIXES.md` — Notes from the nine-commit fix plan. `Plan.md`, `Intent.md`, `SPONSOR_MEMO.md` and `journal/` are course drafting docs.
 
 ## 4. API Key Security
 - The key lives ONLY in `.env` on the builder's machine.
@@ -35,14 +67,18 @@
 - If the app is ever hosted publicly, the key MUST stay behind a server proxy; never ship it to the client.
 
 ## 5. Models Used
-| Role | Model | Via |
-|------|-------|-----|
-| Mediation | `deepseek/deepseek-chat` | OpenRouter |
-| Grader 1 | `deepseek/deepseek-chat` | OpenRouter |
-| Grader 2 | `anthropic/claude-haiku-5.5` | OpenRouter |
-| Grader 3 | `google/gemini-2.5-flash` | OpenRouter |
+| Role | Model | Used for | Defined in |
+|------|-------|----------|------------|
+| Resident replies (Alex, Jordan, mediation) | `deepseek/deepseek-chat` | every resident message | `MAIN_MODEL` in `public/config.js` |
+| Grader 1 "DeepSeek" | `deepseek/deepseek-chat` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Grader 2 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Grader 3 "Gemini" | `google/gemini-2.5-flash` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Tagger (labels each RA message) | `anthropic/claude-haiku-5.5` | resident openness, every RA turn | `TAGGER_MODEL` in `public/config.js` |
+| Simulated RA (tools only) | `deepseek/deepseek-chat` by default | `tools/simulate.mjs` | `--ra-model` default in `parseArgs` |
 
-Model IDs must match in three places: `MAIN_MODEL` and `GRADER_MODELS` in `public/app.js`, and `ALLOWED_MODELS` in `server.mjs`. The server rejects any model not on its allowlist, so update all of them together.
+Browser calls go through the local server. `tools/` calls OpenRouter directly.
+
+Model IDs must match in three places: `MAIN_MODEL`, `GRADER_MODELS` and `TAGGER_MODEL` in `public/config.js`, and `ALLOWED_MODELS` in `server.mjs`. The server rejects any model not on its allowlist, so update all of them together. `tests/config.test.mjs` checks that `MAIN_MODEL` and the grader ids are on the allowlist. It does not check `TAGGER_MODEL`. `tools/probe-models.mjs` keeps its own copy of the grader ids, so update it by hand too.
 
 ## 6. Non-Negotiable Engineering Rules
 1. **Plan before coding:** Before touching multiple files, propose a brief plan and wait for approval.
@@ -64,3 +100,33 @@ Artifacts live in `.specify/features/roommate-conflict-v1/`:
 - `plan.md` — architecture, data model, phases
 - `tasks.md` — checklisted work items + convergence findings
 - `.specify/memory/constitution.md` — project principles (security, local-first, anti-slop)
+
+## 8. Rubric Scoring
+The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js` (`RUBRIC_VERSION` 1). Questions are grouped as Setting the stage, Hearing both sides, Staying neutral, Facilitating, Compromise and Closing.
+
+1. Each of the three grader models gets the same prompt and answers all 15 questions. Graders judge only the RA's lines.
+2. A YES must include a quote of up to 12 words copied from an RA line. Code checks the quote, ignoring case, extra spaces and curly quotes. If the quote is not found, the YES becomes NO.
+3. A grader's reply is usable if at least 10 of the 15 lines parse. Missing lines count as NO.
+4. Each question is met by vote. With 3 usable graders, 2 YES votes are needed. With 2, both must say YES. With 1, that grader decides. With none, nothing is met.
+5. Score = questions met out of 15, as a percentage, computed in code. The debrief shows "X of 15", the grader agreement for each question, and one tip for the first missed question. The two reflection questions are shown but not scored.
+
+## 9. Analytics (PostHog)
+- The PostHog snippet in `public/index.html` (and its copy in `docs/demo/`) uses the project key `phc_...`. This is a public, client-side key, so it is allowed in code.
+- Personal API keys (`phx_...`) and any other PostHog personal or secret key must never be used, committed or pasted into any file.
+- Events carry counts and labels only (turn number, character count, topic, difficulty, met count, error location). They never carry message text, the RA's name or transcripts.
+- Analytics never throws. A blocked PostHog does not break the app.
+
+## 10. Known Gaps
+1. **Voice input is not built.** Planned for v2 (spec task T042).
+2. **No retry.** Failed grader calls are shown as failed, and failed resident calls show an error for the RA to retry. Nothing retries with backoff (T046).
+3. **No cost in the UI.** The debrief does not show per-session cost (T045). Cost is only reported by `tools/simulate.mjs` and `tools/report.mjs`.
+4. **Keyboard:** Enter sends. There is no Escape shortcut to end a session (T048). The debrief has no loading spinner (T047).
+5. **`probe-models.mjs` tests an old prompt.** It copies a grader prompt with a `SCORE` and `STRENGTHS` format from an earlier version. The app now uses `buildRubricPrompt` in `public/rubric.js`, and there is no `graderPrompt()` in `app.js`. Probe results do not describe the current graders.
+6. **`--max-turns` has no effect.** Each built-in persona sets its own `maxTurns`, and that value wins. The flag only applies to a persona without one, and all ten have one.
+7. **Stale comments.** `server.mjs` says its model list is kept in sync with `public/app.js` and mentions `CONSOLIDATOR_MODEL`. Neither exists now: the lists are in `public/config.js`, and the debrief has no consolidator. `FIXES.md` has the same history.
+8. **Cost limits depend on OpenRouter.** Every price in `tools/prices.json` is `null`. `--max-cost` counts only costs that the API reports as `usage.cost`. Unknown costs are shown as unknown and are not counted.
+9. **Tests do not cover live model behaviour or the browser UI.** There is no browser test. Model quality is checked by hand and by `tools/simulate.mjs`. `tests/config.test.mjs` does not check `TAGGER_MODEL` against the allowlist.
+10. **Residents agree too easily.** `RESIDENT-NOTES.md` (not yet committed) finds that residents reach agreement whatever the RA does, so the agreement is not a reliable sign of good mediation.
+11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
+12. **Saved data is not managed.** The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` is not committed and not in `.gitignore`.
+13. **Local only.** The server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.

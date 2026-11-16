@@ -1,3 +1,5 @@
+import { startingOpenness } from "./logic.js";
+
 // Settings, resident profiles, resident prompts and session shape. No DOM, no network, no storage,
 // so app.js, mock.js, tests and Node scripts can all import this file.
 
@@ -12,6 +14,10 @@ export const TOKENS_RESIDENT = 150;
 export const TOKENS_GRADER = 1500;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
 export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
+// Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
+export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
+export const TOKENS_TAGGER = 150;
+export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
 export const MAX_TURNS = 10;
 
 export function getProfiles(topic, difficulty) {
@@ -40,6 +46,10 @@ export function getProfiles(topic, difficulty) {
     "shared items": {
       alex: "Jordan borrows food, chargers, clothes without asking. Nothing gets replaced.",
       jordan: "Alex labels everything. Sharing was supposed to be part of living together.",
+    },
+    "religious practice": {
+      alex: "Alex is Muslim and prays quietly each night after Jordan goes to sleep. Jordan openly keeps bacon in the shared fridge, and Alex follows a halal diet. They have lived together a few weeks and things were mostly fine. Alex is hesitant to raise it because Alex does not want tension, and only opens up when the RA gives Alex space to share. Alex speaks respectfully at all times.",
+      jordan: "Jordan openly keeps bacon in the shared fridge. Jordan and Alex have lived together a few weeks and things were mostly fine. Jordan speaks respectfully at all times, whatever the mood, and is willing to listen to Alex.",
     },
   };
   const t = traits[difficulty] || traits.medium;
@@ -94,5 +104,6 @@ export function createSession() {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
     agreementNoticeShown: false,
+    openness: startingOpenness("medium"),
   };
 }

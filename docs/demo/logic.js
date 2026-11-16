@@ -61,33 +61,129 @@ export function cleanResponse(raw) {
   return t;
 }
 
-export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile) {
+// ---- Earned openness ----
+// Each resident has an openness level 0..3. It starts at 1 on easy and 0 otherwise, and moves
+// only with what the RA does. There is no turn-count pressure.
+
+export const OPENNESS_MIN = 0;
+export const OPENNESS_MAX = 3;
+
+export function startingOpenness(difficulty) {
+  const level = difficulty === "easy" ? 1 : 0;
+  return { alex: level, jordan: level, progress: { alex: 0, jordan: 0 } };
+}
+
+// What the resident does at each level. Quoted by mediationPrompt, found by mock.js via OPENNESS_MARKER.
+export const OPENNESS_BANDS = [
+  "guarded. Keep it short, defend your position, and do not brainstorm or suggest solutions.",
+  "a bit softer in tone. You may acknowledge the other person's point once, but you still hold your position.",
+  "explaining how this really affects you, and willing to consider options.",
+  "ready to compromise. You may propose one small concrete step, but only agree to a plan after the RA asks what you would be willing to try.",
+];
+export const OPENNESS_MARKER = "OPENNESS";
+
+const TAG_FLAGS = ["reflective_listening", "validates_feeling", "open_question", "invites_to_share", "ground_rules", "proposes_solution", "takes_side", "lectures"];
+const ADDRESSEES = ["alex", "jordan", "both", "none"];
+
+export function buildTaggerPrompt(history, raText) {
+  const recent = history.slice(-4).map(h => `${h.sender}: ${h.text}`).join("\n");
+  return `You label ONE message from a Resident Assistant (RA) who is mediating between two roommates, Alex and Jordan.
+
+Recent conversation:
+${recent || "(none)"}
+
+RA message to label:
+"${raText}"
+
+Reply with JSON only, no other text, in exactly this shape:
+{"addresses":"alex|jordan|both|none","reflective_listening":false,"validates_feeling":false,"open_question":false,"invites_to_share":false,"ground_rules":false,"proposes_solution":false,"takes_side":false,"lectures":false}
+
+addresses: who the message is aimed at. "both" if it speaks to both roommates, "none" if neither.
+reflective_listening: restates or summarizes what a roommate said.
+validates_feeling: names or accepts a roommate's feeling as understandable.
+open_question: asks a question that needs more than yes or no.
+invites_to_share: asks a roommate to tell their side or needs.
+ground_rules: sets rules for the conversation.
+proposes_solution: the RA suggests or orders a specific fix.
+takes_side: the RA backs one roommate over the other.
+lectures: the RA scolds, moralizes or talks down.`;
+}
+
+// Returns the tags object, or null if the reply is not valid. Callers must change nothing on null.
+export function parseTags(raw) {
+  const text = String(raw || "");
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let o;
+  try { o = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+  if (!o || typeof o !== "object" || !ADDRESSEES.includes(o.addresses)) return null;
+  const tags = { addresses: o.addresses };
+  for (const f of TAG_FLAGS) {
+    if (typeof o[f] !== "boolean") return null;
+    tags[f] = o[f];
+  }
+  return tags;
+}
+
+const clamp = n => Math.max(OPENNESS_MIN, Math.min(OPENNESS_MAX, n));
+
+// Pure. state: { alex, jordan, progress: { alex, jordan } }. Returns a new state, never mutates.
+// tags null (tagger reply did not parse) returns the state unchanged.
+export function updateOpenness(state, tags, difficulty) {
+  const next = { alex: state.alex, jordan: state.jordan, progress: { alex: state.progress?.alex || 0, jordan: state.progress?.jordan || 0 } };
+  if (!tags) return next;
+  const addressed = tags.addresses === "both" ? ["alex", "jordan"] : tags.addresses === "none" ? [] : [tags.addresses];
+  const other = r => (r === "alex" ? "jordan" : "alex");
+  const delta = { alex: 0, jordan: 0 };
+  const lowered = { alex: false, jordan: false };
+
+  // Raise: at most +1 per resident per turn. On hard, every second qualifying turn counts.
+  if (tags.reflective_listening || tags.validates_feeling) {
+    for (const r of addressed) {
+      if (difficulty === "hard") {
+        next.progress[r] += 1;
+        if (next.progress[r] >= 2) { next.progress[r] = 0; delta[r] += 1; }
+      } else delta[r] += 1;
+    }
+  }
+  // Drops.
+  if (tags.takes_side) {
+    // Backing the addressed resident turns the other one against the RA. With no clear target nothing changes.
+    if (addressed.length === 1) { delta[other(addressed[0])] -= 1; lowered[other(addressed[0])] = true; }
+  }
+  if (tags.lectures) for (const r of addressed) { delta[r] -= 1; lowered[r] = true; }
+  if (tags.proposes_solution) for (const r of addressed) if (state[r] < 2) { delta[r] -= 1; lowered[r] = true; }
+
+  for (const r of ["alex", "jordan"]) {
+    next[r] = clamp(state[r] + delta[r]);
+    if (lowered[r]) next.progress[r] = 0; // a bad turn wipes half-earned progress on hard
+  }
+  return next;
+}
+
+// openness: 0..3 for the speaker. Defaults to the difficulty's starting level.
+export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness) {
   const speakerKey = speaker.toLowerCase();
   const p = profile[speakerKey];
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
-
-  let pressure = "";
-  if (turnCount >= 6) {
-    pressure = "\n\nCRITICAL: This is turn 6+. You MUST show willingness to agree to a compromise. Do not resist anymore.";
-  } else if (turnCount >= 4) {
-    pressure = "\n\nIMPORTANT: Start showing openness to compromise. Do not just repeat your position.";
-  }
+  const level = clamp(Number.isInteger(openness) ? openness : startingOpenness(difficulty)[speakerKey]);
 
   return `You are ${p.name}. ${p.meta}. ${p.trait} Currently ${p.mood}.
 
 Your stance: ${p.stance}
 
 CONVERSATION:
-${transcript}${pressure}
+${transcript}
+
+${OPENNESS_MARKER} ${level} of ${OPENNESS_MAX}: you are ${OPENNESS_BANDS[level]}
 
 RULES:
-- MAXIMUM 2 paragraphs.
-- MAXIMUM 4 sentences total.
-- If you write more than 2 paragraphs, your response will be cut off.
+- Say 1 to 3 short sentences, in a spoken style, the way a college student would talk.
+- No lists.
 - Address the RA directly.
 - Do NOT use em dashes. Use periods or commas only.
-- Do NOT prefix with "${p.name}:".
-- Respond naturally in 2-4 sentences only.`;
+- Do NOT prefix with "${p.name}:".`;
 }
 
 // Record a finished turn. Called only after the resident reply succeeded, so a failed
@@ -158,4 +254,11 @@ export function shouldShowAgreementNotice(session) {
 export function isMockMode(hostname, search) {
   const host = String(hostname || "").toLowerCase();
   return host === "github.io" || host.endsWith(".github.io") || new URLSearchParams(search || "").get("mock") === "1";
+}
+
+// Analytics label: 'demo' on GitHub Pages, 'mock' with ?mock=1, otherwise 'live' (local server).
+export function getAppMode(hostname, search) {
+  const host = String(hostname || "").toLowerCase();
+  if (host === "github.io" || host.endsWith(".github.io")) return "demo";
+  return new URLSearchParams(search || "").get("mock") === "1" ? "mock" : "live";
 }

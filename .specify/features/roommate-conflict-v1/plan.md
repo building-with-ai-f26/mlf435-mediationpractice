@@ -9,7 +9,7 @@
 ## Data Model
 - **Session** (in-memory, per tab):
   - raName: string
-  - topic: enum (noise | cleaning | guest policy | hygiene | shared items)
+  - topic: enum (noise | cleaning | guest policy | hygiene | shared items | religious practice)
   - difficulty: enum (easy | medium | hard)
   - turnHistory: Array<{sender: string, text: string}>
   - active: boolean

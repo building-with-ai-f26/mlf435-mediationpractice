@@ -1,12 +1,19 @@
-import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, cleanResponse, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage } from "./logic.js";
+import { isMockMode, getResponder, commitTurn, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode } from "./logic.js";
 import { mockResponse } from "./mock.js";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { RUBRIC, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
 // ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
 const MOCK = isMockMode(location.hostname, location.search);
 if (MOCK) document.getElementById("demo-banner").hidden = false;
+
+// Analytics. Never throws: a blocked or failed PostHog must not break the app.
+// Callers pass counts and labels only, never message text, the RA's name or transcripts.
+function track(event, props) {
+  try { window.posthog && window.posthog.capture(event, props); } catch (e) { /* ignore */ }
+}
+try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search) }); } catch (e) { /* ignore */ }
 
 const HINTS = [
   "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
@@ -164,6 +171,7 @@ async function startSession() {
   session.lastSpeaker = "Jordan";
   session.turnCount = 0;
   session.agreementNoticeShown = false;
+  session.openness = startingOpenness(session.difficulty);
   updateTurnCounter();
 
   DOM.raNameDisplay.textContent = session.raName;
@@ -177,6 +185,7 @@ async function startSession() {
   DOM.graderCards.innerHTML = "";
   DOM.consolidated.innerHTML = "";
 
+  track("session_started", { topic: session.topic, difficulty: session.difficulty });
   const profiles = getProfiles(session.topic, session.difficulty);
   session.profiles = profiles;
   renderCards(profiles);
@@ -211,6 +220,7 @@ async function startSession() {
   } catch (err) {
     hideLoading();
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Refresh to retry.`));
+    track("error_shown", { where: "session_start" });
     console.error(err);
   }
 }
@@ -228,11 +238,21 @@ async function send() {
   scrollToBottom();
 
   const turn = session.turnCount + 1;
+  track("ra_message_sent", { turn, chars: text.length });
   const speaker = getResponder(text, session.lastSpeaker);
   console.log("[Routing] RA said:", text, "| responder:", speaker);
 
   try {
-    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry], speaker, turn, session.profiles) }]);
+    // Tag the RA message, then update openness. An unreadable or failed tagger reply changes nothing.
+    let tags = null;
+    try {
+      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS));
+    } catch (e) {
+      console.warn("[Tagger] failed, openness unchanged:", e.message);
+    }
+    const openness = updateOpenness(session.openness, tags, session.difficulty);
+    console.log("[Tagger]", tags, "openness", openness);
+    const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
     hideLoading();
     const cleanText = cleanResponse(raw);
     console.log("[Response raw]", raw);
@@ -242,6 +262,7 @@ async function send() {
 
     DOM.chatLog.appendChild(msgEl(speaker, cleanText, type));
     commitTurn(session, raEntry, speaker, cleanText);
+    session.openness = openness;
     if (shouldShowAgreementNotice(session)) {
       DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
     }
@@ -260,6 +281,7 @@ async function send() {
     raEl.remove();
     DOM.raInput.value = text;
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
+    track("error_shown", { where: "mediation_turn" });
     setInput(true);
     console.error(err);
   }
@@ -270,6 +292,7 @@ async function end() {
   session.active = false;
   setInput(false);
   saveLog();
+  track("session_ended", { turns: session.turnCount, reason: isTurnCapReached(session.turnCount, MAX_TURNS) ? "turn_cap" : "ra_ended" });
 
   DOM.chatView.classList.add("hidden");
   DOM.debriefView.classList.remove("hidden");
@@ -300,6 +323,7 @@ async function end() {
     renderDebrief(results);
   } catch (err) {
     DOM.consolidated.innerHTML = `<div class="section-block">Error: ${esc(err.message)}</div>`;
+    track("error_shown", { where: "debrief" });
     console.error(err);
   }
 }
@@ -315,6 +339,7 @@ const REFLECTION_QUESTIONS = [
 
 function renderDebrief(results) {
   const valid = results.filter(r => r.ok);
+  let metCount = 0;
   DOM.graderCards.innerHTML = results.map(r => `
     <div class="grader-chip${r.ok ? "" : " failed"}">
       <span class="grader-name">${esc(r.name)}</span>
@@ -327,6 +352,7 @@ function renderDebrief(results) {
   } else {
     const combined = combineGraders(results);
     const { met, total, score } = scoreFromCombined(combined);
+    metCount = met;
     html += `<div class="score-display"><div class="score-number">${met} of ${total}</div><div class="score-label">${score}% of checklist items met</div>`;
     if (valid.length < 2) html += `<div class="grader-note">Score based on ${valid.length} grader${valid.length === 1 ? "" : "s"}</div>`;
     html += "</div>";
@@ -356,6 +382,8 @@ function renderDebrief(results) {
 
   html += `<div class="section-block"><h3>Reflection (not scored)</h3><ul>${REFLECTION_QUESTIONS.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>`;
   DOM.consolidated.innerHTML = html;
+  track("debrief_viewed", { met: metCount, graders_ok: valid.length });
+  if (valid.length < results.length) track("error_shown", { where: "grader" });
 }
 
 function esc(text) {
@@ -379,6 +407,7 @@ DOM.endBtn.addEventListener("click", end);
 const hintBtn = document.getElementById("hint-btn");
 if (hintBtn) {
   hintBtn.addEventListener("click", () => {
+    track("hint_clicked");
     const hint = HINTS[Math.floor(Math.random() * HINTS.length)];
     DOM.chatLog.appendChild(sysEl("Hint: " + hint));
     scrollToBottom();

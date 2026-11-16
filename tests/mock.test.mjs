@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mockResponse, classifyPrompt } from "../public/mock.js";
 import { getProfiles, alexPrompt, jordanPrompt } from "../public/config.js";
-import { extractContent, mediationPrompt, isConfirmation, bothAgreed } from "../public/logic.js";
+import { extractContent, mediationPrompt, buildTaggerPrompt, parseTags, isConfirmation, bothAgreed } from "../public/logic.js";
 import { buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined } from "../public/rubric.js";
 
 const profile = d => getProfiles("noise", d);
@@ -61,19 +61,19 @@ test("mock with no RA lines answers NO to everything", () => {
 });
 
 for (const d of ["easy", "medium", "hard"]) {
-  test(`mock residents reply in <=2 paragraphs, and agree by turn 6 (${d})`, () => {
+  test(`mock residents reply in <=2 paragraphs, and agree only at openness 3 (${d})`, () => {
     const p = profile(d);
     for (const who of ["Alex", "Jordan"]) {
-      for (const turn of [1, 4, 6]) {
-        const prompt = mediationPrompt("noise", d, [{ sender: "RA", text: "hi" }], who, turn, p);
+      for (const level of [0, 1, 2, 3]) {
+        const prompt = mediationPrompt("noise", d, [{ sender: "RA", text: "hi" }], who, 1, p, level);
         assert.equal(classifyPrompt(prompt), "mediation");
         const text = reply(prompt);
         assert.ok(text.split(/\n{2,}/).length <= 2);
         assert.ok(!/[\u2014\u2013]/.test(text));
-        if (turn === 6) assert.ok(isConfirmation(text), `${who} late reply should confirm: ${text}`);
+        assert.equal(isConfirmation(text), level === 3, `${who} openness ${level}: ${text}`);
       }
     }
-    const h = ["Alex", "Jordan"].map(w => ({ sender: w, text: reply(mediationPrompt("noise", d, [], w, 6, p)) }));
+    const h = ["Alex", "Jordan"].map(w => ({ sender: w, text: reply(mediationPrompt("noise", d, [], w, 1, p, 3)) }));
     assert.ok(bothAgreed(h));
   });
 }
@@ -104,10 +104,61 @@ test("mock recognises the real intro prompts and picks the right difficulty", ()
 test("mock recognises the real mediation and rubric prompts", () => {
   const p = getProfiles("noise", "medium");
   for (const who of ["Alex", "Jordan"]) {
-    for (const turn of [1, 3, 6]) {
-      assert.equal(classifyPrompt(mediationPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], who, turn, p)), "mediation", `${who} turn ${turn}`);
+    for (const level of [0, 1, 2, 3]) {
+      assert.equal(classifyPrompt(mediationPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], who, 1, p, level)), "mediation", `${who} openness ${level}`);
     }
   }
   assert.equal(classifyPrompt(buildRubricPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], "Sam")), "rubric");
   assert.equal(classifyPrompt("something else entirely"), "unknown");
+});
+
+test("mock stage follows the openness band: 0 and 1 early, 2 mid, 3 late", () => {
+  const p = profile("medium");
+  const at = level => reply(mediationPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], "Alex", 1, p, level));
+  assert.equal(at(0), at(1));
+  assert.notEqual(at(1), at(2));
+  assert.notEqual(at(2), at(3));
+  // Turn count no longer matters.
+  const turn9 = reply(mediationPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], "Alex", 9, p, 0));
+  assert.equal(turn9, at(0));
+});
+
+test("mock recognises the real tagger prompt and returns tags that parse", () => {
+  const prompt = buildTaggerPrompt([{ sender: "Alex", text: "I cannot sleep." }], "Alex, it sounds like you are exhausted. What would help?");
+  assert.equal(classifyPrompt(prompt), "tagger");
+  const tags = parseTags(reply(prompt));
+  assert.ok(tags);
+  assert.equal(tags.addresses, "alex");
+  assert.equal(tags.reflective_listening, true);
+  assert.equal(tags.open_question, true);
+  assert.equal(tags.lectures, false);
+});
+
+test("religious practice mock: intros and replies stay on topic, respectful, and only agree at openness 3", () => {
+  for (const d of ["easy", "medium", "hard"]) {
+    const p = getProfiles("religious practice", d);
+    const aPrompt = alexPrompt("religious practice", d, p);
+    const jPrompt = jordanPrompt("religious practice", d, p, "Hi, I'm Alex.");
+    assert.equal(classifyPrompt(aPrompt), "alex-intro");
+    assert.equal(classifyPrompt(jPrompt), "jordan-intro");
+    assert.doesNotMatch(reply(aPrompt), /noise|midnight/i);
+    assert.notEqual(reply(aPrompt), reply(jPrompt));
+    for (const who of ["Alex", "Jordan"]) {
+      for (const level of [0, 1, 2, 3]) {
+        const prompt = mediationPrompt("religious practice", d, [{ sender: "Sam", text: "hi" }], who, 1, p, level);
+        assert.equal(classifyPrompt(prompt), "mediation");
+        const text = reply(prompt);
+        assert.doesNotMatch(text, /noise|11pm|headphones/i);
+        assert.ok(!/[\u2014\u2013]/.test(text));
+        assert.ok(text.split(/\n{2,}/).length <= 2);
+        assert.equal(isConfirmation(text), level === 3, `${who} ${d} ${level}: ${text}`);
+      }
+    }
+  }
+  // Alex only shares details once given space (openness 2).
+  const p = getProfiles("religious practice", "medium");
+  const alexAt = l => reply(mediationPrompt("religious practice", "medium", [{ sender: "Sam", text: "hi" }], "Alex", 1, p, l));
+  assert.doesNotMatch(alexAt(0), /Muslim|halal|pray/);
+  assert.match(alexAt(2), /Muslim/);
+  assert.match(alexAt(2), /halal/);
 });

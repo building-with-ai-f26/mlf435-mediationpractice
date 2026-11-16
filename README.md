@@ -33,13 +33,23 @@ Create your PostHog account in Week 1. Install it on the Product Page and local 
 
 [Icerynk](https://www.icerynk.com/c/fa26-tech-gb-2160-dm2-f2/content) holds the assignment instructions and submissions.
 
-## Local setup
+## Run locally
 
-Clone **your own repository** and ask your coding agent to document the exact install and run commands here and in `AGENTS.md`.
+You need **Node.js 20 or newer**. There is no `npm install`: the app uses only Node built-ins.
 
 ```bash
 git clone https://github.com/building-with-ai-f26/<your-repo-name>.git
 cd <your-repo-name>
+node --version                 # must print v20 or newer
+cp .env.example .env           # then open .env and replace the placeholder with your OpenRouter key
+node server.mjs                # open http://localhost:3000
 ```
 
-If your app needs API keys, use a local environment file such as `.env`. Keep private keys out of source code, browser code, screenshots, and commits. The template ignores `.env`; `.env.example` contains placeholders only.
+Run these from the repo root. The server reads `OPENROUTER_API_KEY` from `.env` and exits with an error if the key is missing. `.env` is git-ignored and the key never reaches the browser. Keep it private.
+
+- **Mock mode (no API calls):** open `http://localhost:3000/?mock=1` for canned replies and grades. The server still needs a key line in `.env` to start.
+- **Tests:** `node --test tests/` (142 tests, offline).
+- **Tools:** `node tools/probe-models.mjs [--dry]`, `node tools/simulate.mjs --persona strong --dry`, `node tools/report.mjs`. Any run without `--dry` calls OpenRouter and costs money. `simulate.mjs` has more flags (`--scenario`, `--difficulty`, `--runs`, `--ra-model`, `--max-cost`, `--out`); see `AGENTS.md`.
+- **Sync the GitHub Pages demo:** `scripts/sync-demo.sh`, then commit `docs/demo/`.
+
+The full command list, file map, model table, rubric scoring and known gaps are in [`AGENTS.md`](./AGENTS.md).

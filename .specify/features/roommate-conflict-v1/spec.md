@@ -6,7 +6,7 @@ A local web application that lets Resident Assistants practice mediating a roomm
 ## Functional Requirements
 
 ### FR-001: Session Setup
-The RA enters their name, selects a conflict topic from a dropdown (noise, cleaning, guest policy, hygiene, shared items), and selects a difficulty (easy, medium, hard).
+The RA enters their name, selects a conflict topic from a dropdown (noise, cleaning, guest policy, hygiene, shared items, religious practice), and selects a difficulty (easy, medium, hard).
 
 ### FR-002: Context Cards
 Before mediation begins, two resident profile cards display on screen showing name, age, year, major, personality, current mood, and their position on the conflict. Cards are color-coded per resident.

@@ -19,20 +19,31 @@ test("does not contain other resident's stance", () => {
   assert.ok(!prompt.includes("Evening classes mean late nights."));
 });
 
-test("turn 4 pressure text included", () => {
-  const prompt = mediationPrompt("noise", "medium", [], "Alex", 4, profile);
-  assert.ok(prompt.includes("openness to compromise"));
-  assert.ok(!prompt.includes("CRITICAL"));
+test("turn-count pressure text is gone at every turn", () => {
+  for (const turn of [1, 4, 6, 9]) {
+    const prompt = mediationPrompt("noise", "medium", [], "Alex", turn, profile);
+    assert.ok(!/CRITICAL|IMPORTANT|MUST show willingness|openness to compromise/.test(prompt));
+  }
 });
 
-test("turn 6+ critical pressure text included", () => {
-  const prompt = mediationPrompt("noise", "hard", [], "Jordan", 6, profile);
-  assert.ok(prompt.includes("MUST show willingness"));
+test("each openness level adds its own band text", () => {
+  const expected = [
+    /OPENNESS 0 of 3.*guarded.*short.*defend.*do not brainstorm/,
+    /OPENNESS 1 of 3.*softer.*acknowledge the other person's point once/,
+    /OPENNESS 2 of 3.*explaining how this really affects you.*willing to consider options/,
+    /OPENNESS 3 of 3.*compromise.*one small concrete step.*only agree to a plan after the RA asks what you would be willing to try/,
+  ];
+  expected.forEach((re, level) => {
+    const prompt = mediationPrompt("noise", "medium", [], "Alex", 1, profile, level);
+    assert.match(prompt, re);
+    assert.equal((prompt.match(/OPENNESS \d of 3/g) || []).length, 1);
+  });
 });
 
-test("turn 3 has no pressure text", () => {
-  const prompt = mediationPrompt("noise", "medium", [], "Alex", 3, profile);
-  assert.ok(!prompt.includes("compromise"));
+test("openness defaults to the difficulty's starting level", () => {
+  assert.match(mediationPrompt("noise", "easy", [], "Alex", 1, profile), /OPENNESS 1 of 3/);
+  assert.match(mediationPrompt("noise", "medium", [], "Alex", 1, profile), /OPENNESS 0 of 3/);
+  assert.match(mediationPrompt("noise", "hard", [], "Jordan", 1, profile), /OPENNESS 0 of 3/);
 });
 
 test("contains transcript when history present", () => {
@@ -41,7 +52,11 @@ test("contains transcript when history present", () => {
   assert.ok(prompt.includes("RA: How are you?"));
 });
 
-test("contains MAXIMUM 2 paragraphs rule", () => {
+test("length rule is 1 to 3 short spoken sentences, no lists", () => {
   const prompt = mediationPrompt("noise", "medium", [], "Alex", 1, profile);
-  assert.ok(prompt.includes("MAXIMUM 2 paragraphs"));
+  assert.ok(prompt.includes("1 to 3 short sentences"));
+  assert.ok(prompt.includes("college student"));
+  assert.ok(prompt.includes("No lists"));
+  assert.ok(!prompt.includes("MAXIMUM"));
+  assert.ok(!prompt.includes("2 paragraphs"));
 });
