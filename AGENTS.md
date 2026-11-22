@@ -233,6 +233,14 @@ Stop and ask me before doing any of these:
 - Force-pushing or rewriting git history.
 - Deleting files outside the current task.
 - Installing new dependencies.
+- Running `scripts/migrate.mjs` against production.
+
+## Database migrations
+- Schema changes are made only through new numbered migration files in `migrations/`, and never by editing an applied one.
+- Running `scripts/migrate.mjs` against the dev database is allowed only when I have asked for that change.
+- Running it against production is on the Ask me first list, and only the human runs it.
+- The agent must never ask for, store or paste the production connection string.
+- See `migrations/README.md` for the commands.
 
 ## Rules from real mistakes
 - **(a)** Never report a vulnerability or bug without reproducing it with a command and showing the output. An agent once reported a path traversal that did not reproduce.
