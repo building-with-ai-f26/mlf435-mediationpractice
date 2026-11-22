@@ -493,7 +493,7 @@ async function end() {
           const parsed = parseRubricReply(raw);
           if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
           const verified = verifyEvidence(parsed.answers, session.turnHistory);
-          if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO, quote not found in RA messages: Q${verified.changed.join(", Q")}`);
+          if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO: ${verified.changed.map(id => `Q${id} (${verified.reasons[id]})`).join(", ")}`);
           return { name: g.name, model: g.id, ok: true, answers: verified.answers, changed: verified.changed };
         } catch (e) {
           const finish = e.finishReason ?? "none (no reply received)";

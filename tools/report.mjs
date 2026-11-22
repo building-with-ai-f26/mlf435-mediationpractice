@@ -4,7 +4,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
 import { GRADER_MODELS } from "../public/config.js";
-import { RUBRIC } from "../public/rubric.js";
+import { RUBRIC, parseRubricReply, verifyEvidence } from "../public/rubric.js";
 
 export function loadRecords(dir, { includeDry = false } = {}) {
   const out = [];
@@ -20,6 +20,41 @@ export function loadRecords(dir, { includeDry = false } = {}) {
   };
   walk(dir);
   return out;
+}
+
+const normLoose = s => String(s ?? "").toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+
+// Re-runs the evidence check on each grader's saved raw reply and says why every YES was changed:
+// no_quote (bare YES), resident_words (quote is a resident's text), punctuation_only (matches an RA line once
+// punctuation is stripped), not_found (nothing like it in the transcript).
+export function classifyChanges(records) {
+  const out = [];
+  for (const r of records) {
+    if (!Array.isArray(r.transcript)) continue;
+    const isRes = h => ["Alex", "Jordan"].includes(h.sender);
+    const ra = r.transcript.filter(h => !isRes(h)).map(h => normLoose(h.text));
+    const res = r.transcript.filter(isRes).map(h => normLoose(h.text));
+    for (const g of r.graders) {
+      if (!g.ok || typeof g.raw !== "string") continue;
+      const p = parseRubricReply(g.raw);
+      const v = verifyEvidence(p.answers, r.transcript);
+      for (const id of v.changed) {
+        const quote = p.answers[id].quote, q = normLoose(quote);
+        let kind = v.reasons[id];
+        if (kind === "not_found") kind = ra.some(t => t.includes(q)) ? "punctuation_only" : res.some(t => t.includes(q)) ? "resident_words" : "not_found";
+        out.push({ persona: r.persona.id, grader: g.name, q: id, kind, quote });
+      }
+    }
+  }
+  return out;
+}
+
+// Share of sessions where each question was not met in the combined vote, overall and by persona.
+export function missRates(records) {
+  return RUBRIC.map(q => {
+    const missed = records.filter(r => !r.combined?.find(c => c.id === q.id)?.met);
+    return { id: q.id, group: q.group, missed: missed.length, total: records.length, share: records.length ? missed.length / records.length : null, personas: [...new Set(missed.map(r => r.persona.id))] };
+  });
 }
 
 const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -68,7 +103,7 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
+  return { total: records.length, ids, misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -83,7 +118,14 @@ export function formatReport(rep) {
   for (const c of rep.changed) L.push(`${c.grader.padEnd(10)} ${c.changedYesToNo} across ${c.sessions} session(s)`);
   const d = rep.disagreement;
   L.push("", `(d) Questions where valid graders disagreed: ${d.disagreed} of ${d.asked} (${d.share === null ? "n/a" : (d.share * 100).toFixed(1) + "%"})`);
-  L.push("", "(e) Mean cost per session (USD, sessions with known cost only)");
+  L.push("", "(e) Miss rate per question (not met in the combined vote)", "Q   missed   group");
+  for (const m of rep.misses) L.push(`Q${String(m.id).padEnd(3)}${(m.missed + "/" + m.total).padEnd(9)}${((m.share ?? 0) * 100).toFixed(0).padStart(3)}%  ${m.group}${m.share >= 0.9 ? "   <- 90% or more" : ""}`);
+  L.push("", "(f) Changed YES answers, by reason");
+  const kinds = {};
+  for (const c of rep.changes) kinds[c.kind] = (kinds[c.kind] || 0) + 1;
+  L.push(Object.keys(kinds).length ? Object.entries(kinds).map(([k, n]) => `${k}: ${n}`).join(", ") : "none");
+  for (const c of rep.changes) L.push(`  ${c.persona} / ${c.grader} / Q${c.q} [${c.kind}] ${JSON.stringify(c.quote)}`);
+  L.push("", "(g) Mean cost per session (USD, sessions with known cost only)");
   for (const [role, c] of Object.entries(rep.cost)) {
     const name = role === "user_session" ? "user session (residents + graders, no ra_sim)" : role;
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
