@@ -2,13 +2,22 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { URL } from "url";
-import { isOriginAllowed } from "./origins.mjs";
+import { isOriginAllowed, isHostAllowed, parsePublicOrigins } from "./origins.mjs";
+import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
 import { validateChatBody } from "./chatBody.mjs";
 import { MAX_TRANSCRIPT_BYTES, validateTranscript, saveTranscript } from "./liveTranscript.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
-const ALLOWED_ORIGIN = `http://localhost:${PORT}`;
+const PRODUCTION = process.env.NODE_ENV === "production";
+const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGIN);
+const ALLOWED_ORIGIN = PUBLIC_ORIGINS[0] || `http://localhost:${PORT}`;
+const LIVE_AI_ENABLED = envFlag(process.env.LIVE_AI_ENABLED);
+const rateLimiter = createRateLimiter({
+  max: envNumber(process.env.RATE_LIMIT_MAX, 60),
+  windowMs: envNumber(process.env.RATE_LIMIT_WINDOW_MINUTES, 10) * 60 * 1000,
+});
+const dailyCap = createDailyCap(envNumber(process.env.DAILY_CALL_CAP, 500));
 const MAX_BODY_BYTES = 64 * 1024;
 const LIVE_DIR = path.join(process.cwd(), "transcripts", "live");
 let GIT_COMMIT = "unknown";
@@ -21,17 +30,17 @@ const ALLOWED_MODELS = new Set([
   "google/gemini-2.5-flash",
 ]);
 
-// Load API key from .env — must exist
+// The key comes from the environment first, then from .env. It is never logged.
 const envPath = path.join(process.cwd(), ".env");
-let OPENROUTER_API_KEY = null;
-if (fs.existsSync(envPath)) {
+let OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || "").trim() || null;
+if (!OPENROUTER_API_KEY && fs.existsSync(envPath)) {
   const envText = fs.readFileSync(envPath, "utf-8");
   const match = envText.match(/^OPENROUTER_API_KEY=(.+)$/m);
   if (match) OPENROUTER_API_KEY = match[1].trim();
 }
 
 if (!OPENROUTER_API_KEY) {
-  console.error("ERROR: OPENROUTER_API_KEY not found in .env");
+  console.error("ERROR: OPENROUTER_API_KEY not found in the environment or .env");
   process.exit(1);
 }
 
@@ -44,8 +53,33 @@ const MIME_TYPES = {
 
 const PUBLIC_DIR = path.resolve(process.cwd(), "public");
 
+// Set on every response. No Content-Security-Policy yet: the PostHog snippet is inline.
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+};
+
+// Behind a proxy the real client is the first x-forwarded-for entry. Only trusted in production.
+function clientIp(req) {
+  if (PRODUCTION) {
+    const first = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress || "unknown";
+}
+
+// Checks shared by /api/chat and /api/transcript. Returns true if the request was refused.
+function refusedByRateLimit(req, res) {
+  const r = rateLimiter.check(clientIp(req));
+  if (r.ok) return false;
+  res.setHeader("Retry-After", String(r.retryAfter));
+  sendJsonError(res, 429, `Too many requests. Please wait ${r.retryAfter} seconds and try again.`);
+  return true;
+}
+
 function send(res, status, text, type = "text/plain") {
-  res.writeHead(status, { "Content-Type": type, "X-Content-Type-Options": "nosniff" });
+  res.writeHead(status, { "Content-Type": type });
   res.end(text);
 }
 
@@ -71,7 +105,6 @@ function serveFile(req, res, pathname) {
     const data = fs.readFileSync(filePath);
     res.writeHead(200, {
       "Content-Type": MIME_TYPES[path.extname(filePath)] || "application/octet-stream",
-      "X-Content-Type-Options": "nosniff",
     });
     res.end(req.method === "HEAD" ? undefined : data);
   } catch {
@@ -117,15 +150,22 @@ function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
 }
 
 const server = http.createServer((req, res) => {
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+
+  // Health check for the host platform. Before the Host check because probes use internal hostnames. No secrets.
+  if ((req.method === "GET" || req.method === "HEAD") && req.url.split("?")[0] === "/healthz") {
+    return send(res, 200, JSON.stringify({ ok: true }), "application/json");
+  }
+
   const origin = req.headers.origin;
 
   // Only the app's own origin may call us. Browsers always send Origin on cross-site requests.
-  if (origin !== undefined && !isOriginAllowed(origin, PORT)) {
+  if (origin !== undefined && !isOriginAllowed(origin, PORT, PUBLIC_ORIGINS)) {
     return sendJsonError(res, 403, "Origin not allowed");
   }
   // Reject unexpected Host headers (DNS rebinding).
   const host = req.headers.host;
-  if (host !== `localhost:${PORT}` && host !== `127.0.0.1:${PORT}`) {
+  if (!isHostAllowed(host, PORT, PUBLIC_ORIGINS)) {
     return sendJsonError(res, 403, "Host not allowed");
   }
   if (origin !== undefined) {
@@ -152,6 +192,13 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/chat") {
     if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
+    if (!LIVE_AI_ENABLED) {
+      return sendJsonError(res, 503, "Live AI is turned off on this server right now. Try the practice demo at ?mock=1 instead.");
+    }
+    if (refusedByRateLimit(req, res)) return;
+    if (dailyCap.reached()) {
+      return sendJsonError(res, 503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
+    }
     return readBody(req, res, async text => {
       let input;
       try {
@@ -161,6 +208,10 @@ const server = http.createServer((req, res) => {
       }
       const { clean, error } = validateChatBody(input, ALLOWED_MODELS);
       if (error) return sendJsonError(res, 400, error);
+      if (dailyCap.reached()) {
+        return sendJsonError(res, 503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
+      }
+      dailyCap.count();
       try {
         const { status, ok, data } = await proxyToOpenRouter(clean);
         if (!ok) {
@@ -178,6 +229,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/transcript") {
     if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
+    if (refusedByRateLimit(req, res)) return;
     return readBody(req, res, text => {
       const { record, error, status } = validateTranscript(text, { key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT });
       if (error) return sendJsonError(res, status, error);
@@ -197,6 +249,7 @@ const server = http.createServer((req, res) => {
   serveFile(req, res, pathname);
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Server running at ${ALLOWED_ORIGIN}`);
+const HOST = PRODUCTION ? "0.0.0.0" : "127.0.0.1";
+server.listen(PORT, HOST, () => {
+  console.log(`Server running at ${ALLOWED_ORIGIN} (listening on ${HOST}:${PORT}, live AI ${LIVE_AI_ENABLED ? "on" : "off"})`);
 });

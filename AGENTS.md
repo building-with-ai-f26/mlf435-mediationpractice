@@ -17,9 +17,9 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
   node --version                # must print v20 or newer
   cp .env.example .env          # then edit .env and replace the placeholder with your OpenRouter key
   ```
-- **Start the server:** `node server.mjs`, then open `http://localhost:3000`. Run it from the repo root, because it reads `.env` from the current directory. It exits with an error if `.env` has no `OPENROUTER_API_KEY=` line. It listens on `127.0.0.1` only. Set `PORT=<number>` to use another port; the origin check follows it.
+- **Start the server:** `LIVE_AI_ENABLED=true node server.mjs` (or `npm start`), then open `http://localhost:3000`. Without `LIVE_AI_ENABLED=true`, `/api/chat` returns 503 and only `?mock=1` works. The key is read from the `OPENROUTER_API_KEY` environment variable first, then from `.env` in the current directory; the server exits with an error if neither has it. It listens on `127.0.0.1`, or on `0.0.0.0` when `NODE_ENV=production`. See "Server environment variables" below.
 - **Run offline (no API calls):** open `http://localhost:3000/?mock=1`. The browser uses canned replies and grades. The server still has to start, so `.env` needs a key line even in mock mode.
-- **Run tests:** `node --test tests/`. Deterministic and offline: 169 tests in 18 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
+- **Run tests:** `node --test tests/*.test.mjs` (or `npm test`). Deterministic and offline: 195 tests in 20 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
 - **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 11.
 - **Simulate sessions:** `node tools/simulate.mjs [flags]`. Runs whole sessions (residents, simulated RA, tagger, three graders) directly against OpenRouter, not the local server. Live runs cost money and save one transcript per session under `transcripts/`. Flags, all optional:
 
@@ -41,11 +41,29 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
 - **Sync the hosted demo:** `scripts/sync-demo.sh`. Deletes and rebuilds `docs/demo/` as a copy of `public/` for GitHub Pages. No flags. Commit `docs/demo/` after any change in `public/`.
 - **Run model evals:** Manual end-to-end session and debrief checks, plus `tools/simulate.mjs` and `tools/report.mjs` as above. See `tests/README.md` for the Build 4 tracks.
 
+### Server environment variables
+All except the key are read from the process environment only (not from `.env`). Also listed in `.env.example`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OPENROUTER_API_KEY` | none, required | Read from the environment first, then `.env`. Never logged. |
+| `PORT` | `3000` | Listen port. |
+| `NODE_ENV` | unset | `production` binds `0.0.0.0` and uses the first `x-forwarded-for` entry as the client IP. Anything else binds `127.0.0.1` and uses the socket address. |
+| `PUBLIC_ORIGIN` | empty | Comma separated origins (e.g. `https://ra.example.edu`) accepted as Origin, and their hosts accepted as Host, in addition to localhost and 127.0.0.1. |
+| `LIVE_AI_ENABLED` | `false` | `true`, `1`, `yes` or `on` enables `/api/chat`. Otherwise it returns 503 with a readable message, which the app shows. |
+| `RATE_LIMIT_MAX` | `60` | Requests per client IP per window on `/api/chat` and `/api/transcript` (one shared count). Over the limit: 429 with `Retry-After`. In memory, reset on restart. |
+| `RATE_LIMIT_WINDOW_MINUTES` | `10` | Length of that window. |
+| `DAILY_CALL_CAP` | `500` | Global count of valid `/api/chat` calls per UTC day. Once reached: 503. In memory, reset on restart. |
+
+`GET /healthz` returns `200 {"ok":true}` and nothing else. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. There is no Content-Security-Policy yet because the PostHog snippet is inline.
+
 ## 3. Architecture
 - `server.mjs` — Node `http` server on `127.0.0.1`. Serves `public/` (GET and HEAD only) and forwards `POST /api/chat` to OpenRouter, adding the key from `.env`. Rejects models not in `ALLOWED_MODELS`, bodies over 64 KB, and requests with an unexpected Origin or Host.
 - `chatBody.mjs` — Validates the `/api/chat` body: model allowlist, non-empty messages, `max_tokens` (capped at 2000), temperature clamp, `reasoning` shape. Imported by `server.mjs`.
 - `liveTranscript.mjs` — Validates and saves one live session for `POST /api/transcript`: 200 KB cap, refuses `sk-or-` and the loaded key, keeps only known fields, adds `source: "live"` and the git commit, writes the file and the index row. Imported by `server.mjs` and tests.
-- `origins.mjs` — The allowed origins, `localhost` and `127.0.0.1` on the server port. Imported by `server.mjs`.
+- `origins.mjs` — The allowed origins and hosts: `localhost` and `127.0.0.1` on the server port, plus `PUBLIC_ORIGIN`. Imported by `server.mjs`.
+- `limits.mjs` — In-memory per-IP rate limiter, daily call cap and env parsing helpers. Imported by `server.mjs` and tests.
+- `package.json` — Name, version, `type: module`, `engines`, and `start` and `test` scripts. No dependencies.
 - `public/index.html` — Single-page app with 3 views: setup, chat, debrief. Loads the PostHog snippet (section 9).
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
 - `public/app.js` — Browser logic: setup, turn flow, calls to `/api/chat` (or mock replies), debrief rendering, analytics events.
@@ -54,8 +72,8 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
 - `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
 - `public/liveRecord.js` — Pure: builds the record `app.js` sends at the end of a live session, replaces the RA name with "RA", and counts token usage per role.
 - `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
-- `tests/` — 18 `node:test` files, run with `node --test tests/`, plus `tests/README.md` (Build 4 evaluation tracks).
-- `tools/` — `export-live.mjs` (redacted copies of live sessions), `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
+- `tests/` — 20 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
+- `tools/` — `pull-posthog.mjs` (aggregate analytics to `docs/analytics.json`), `export-live.mjs` (redacted copies of live sessions), `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
 - `transcripts/` — Output of `tools/simulate.mjs`: `YYYY-MM-DD/HHMMSS-<scenario>-<difficulty>-<persona>.json`, plus `index.csv`. Read by `tools/report.mjs`.
 - `transcripts/live/` — Live sessions saved by the server (git-ignored): `YYYY-MM-DD/HHMMSS-<topic>-<difficulty>.json` plus `index.csv`. `tools/report.mjs` skips them (`source: "live"`).
 - `transcripts/shared/` — Redacted copies made by `tools/export-live.mjs`. The only transcripts that may be committed.
@@ -117,7 +135,8 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 
 ## 9. Analytics (PostHog)
 - The PostHog snippet in `public/index.html` (and its copy in `docs/demo/`) uses the project key `phc_...`. This is a public, client-side key, so it is allowed in code.
-- Personal API keys (`phx_...`) and any other PostHog personal or secret key must never be used, committed or pasted into any file.
+- Personal API keys (`phx_...`) and any other PostHog personal or secret key must never be committed or pasted into any file, and the app never uses one. The one exception is `tools/pull-posthog.mjs`, which reads `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` from the git-ignored `.env` (`.env.example` has them empty).
+- `node tools/pull-posthog.mjs [--days 120] [--out docs/analytics.json]` queries PostHog (HogQL, `POST https://us.posthog.com/api/projects/<id>/query/`) for `app_mode` live and demo separately, and writes aggregates only (sessions, users, debriefs, completion rate, median turns, average rubric met, generated date) to `docs/analytics.json`. `docs/index.html` loads that file into the User Evidence box and shows "Not yet measured" if it is missing. Live numbers come from `session_started`, `session_ended` and `debrief_viewed` events; the key needs the `query:read` scope.
 - Events carry counts and labels only (turn number, character count, topic, difficulty, met count, error location). They never carry message text, the RA's name or transcripts.
 - Analytics never throws. A blocked PostHog does not break the app.
 
@@ -144,3 +163,21 @@ Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to 
 11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
 12. **Saved data is not managed.** Live sessions pile up in `transcripts/live/` with no cleanup, and a partial save from a closed tab is not merged with a later full one. The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` (except `live/`, which is git-ignored) is not committed and not in `.gitignore`.
 13. **Local only.** The server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
+
+## Shipping
+Filled in after the first deploy (step B3-3)
+
+## Ask me first
+Stop and ask me before doing any of these:
+- Deleting or changing data in the database.
+- Changing the database schema or Row Level Security policies.
+- Creating or editing keys, secrets, env vars or permissions.
+- Adding a paid service, or raising any spending or token limit.
+- Force-pushing or rewriting git history.
+- Deleting files outside the current task.
+- Installing new dependencies.
+
+## Rules from real mistakes
+- **(a)** Never report a vulnerability or bug without reproducing it with a command and showing the output. An agent once reported a path traversal that did not reproduce.
+- **(b)** Do not create new config files or revert my model choices unless I ask. An agent once planned to create a repo-level `models.json` and revert the grader models.
+- **(c)** Read the real config location before answering where config lives. An agent once answered with the app's config instead of the Pi config.

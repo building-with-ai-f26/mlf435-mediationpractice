@@ -222,7 +222,7 @@
         </div>
         <div class="stat-box">
           <div class="stat-label">User Evidence (Analytics from Build 2)</div>
-          <div class="stat-value">[Not yet measured]</div>
+          <div class="stat-value" id="user-evidence">[Not yet measured]</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Sponsor Call (Week 6)</div>
@@ -285,5 +285,10 @@
       </div>
     </section>
   </div>
+<script type="module">
+  // Fills the User Evidence box from analytics.json (made by tools/pull-posthog.mjs). Missing file: text stays as is.
+  import { fillEvidence } from "./analytics-box.js";
+  fillEvidence(document.getElementById("user-evidence"));
+</script>
 </body>
 </html>

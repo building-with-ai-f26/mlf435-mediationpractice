@@ -48,7 +48,7 @@ node server.mjs                # open http://localhost:3000
 Run these from the repo root. The server reads `OPENROUTER_API_KEY` from `.env` and exits with an error if the key is missing. `.env` is git-ignored and the key never reaches the browser. Keep it private.
 
 - **Mock mode (no API calls):** open `http://localhost:3000/?mock=1` for canned replies and grades. The server still needs a key line in `.env` to start.
-- **Tests:** `node --test tests/` (169 tests, offline).
+- **Tests:** `node --test tests/` (182 tests, offline).
 - **Tools:** `node tools/probe-models.mjs [--dry]`, `node tools/simulate.mjs --persona strong --dry`, `node tools/report.mjs`. Any run without `--dry` calls OpenRouter and costs money. `simulate.mjs` has more flags (`--scenario`, `--difficulty`, `--runs`, `--ra-model`, `--max-cost`, `--out`); see `AGENTS.md`.
 - **Live sessions are saved locally.** When you finish a session on the local server (not mock mode), the app saves a copy to `transcripts/live/YYYY-MM-DD/` with the turns, who answered, openness, grader results, models and token counts. The RA name is stored as "RA". If you close the tab after at least 2 turns and before the debrief ends, a partial copy is saved. `transcripts/live/` is git-ignored. To share a session, run `node tools/export-live.mjs transcripts/live/<date>/<file>.json`, which writes a copy to `transcripts/shared/` with email and phone lines removed. Read it before you commit it.
 - **Sync the GitHub Pages demo:** `scripts/sync-demo.sh`, then commit `docs/demo/`.
