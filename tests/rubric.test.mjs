@@ -17,8 +17,8 @@ const reply = (yesIds, quote = "each of you will get a turn") =>
   RUBRIC.map(q => (yesIds.includes(q.id) ? `Q${q.id}: YES | ${quote}` : `Q${q.id}: NO`)).join("\n");
 const grader = yesIds => ({ ok: true, answers: parseRubricReply(reply(yesIds)).answers });
 
-test("rubric has 15 questions, ids 1..15, version 1", () => {
-  assert.equal(RUBRIC_VERSION, 1);
+test("rubric has 15 questions, ids 1..15, version 2", () => {
+  assert.equal(RUBRIC_VERSION, 2);
   assert.deepEqual(RUBRIC.map(q => q.id), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const q of RUBRIC) assert.ok(q.group && q.text && q.tip);
 });
@@ -185,4 +185,19 @@ test("verifyEvidence says why a YES changed: no_quote or not_found", () => {
 test("a quote copied from a resident message is not_found", () => {
   const a = parseRubricReply("Q2: YES | I only study late").answers;
   assert.equal(verifyEvidence(a, history).reasons[2], "not_found");
+});
+
+test("prompt requires a quote for the avoid questions Q8, Q9 and Q11 and bans a bare YES", () => {
+  const p = buildRubricPrompt("noise", "medium", history, "Sam");
+  assert.match(p, /Never write a bare YES/);
+  assert.match(p, /Q8, Q9 and Q11[^\n]*quote one RA line/);
+  assert.match(p, /for Q8 [^\n]*for Q9 [^\n]*for Q11 /);
+  assert.doesNotMatch(p, /\u2014/);
+});
+
+test("a bare YES on Q8, Q9 or Q11 is still turned into NO (strict rule unchanged)", () => {
+  const a = parseRubricReply("Q8: YES\nQ9: YES\nQ11: YES").answers;
+  const v = verifyEvidence(a, history);
+  assert.deepEqual(v.changed, [8, 9, 11]);
+  assert.deepEqual(v.reasons, { 8: "no_quote", 9: "no_quote", 11: "no_quote" });
 });

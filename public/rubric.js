@@ -1,7 +1,7 @@
 // Yes/no mediation rubric. Pure functions, no DOM or network, so tests can import this file.
 // Each grader answers 15 questions; code verifies the quotes, votes across graders, and does the math.
 
-export const RUBRIC_VERSION = 1;
+export const RUBRIC_VERSION = 2; // 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
 
 export const RUBRIC = [
   { id: 1, group: "Setting the stage", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
@@ -42,6 +42,8 @@ Rules:
 - Judge ONLY the RA's messages. Never judge the residents.
 - Do not consider whether the residents agreed or how the conversation turned out.
 - Answer YES only if you can quote the RA. The quote must be copied exactly from an RA message.
+- Never write a bare YES. A YES with no quote counts as NO.
+- Q8, Q9 and Q11 ask whether the RA held back from something. To answer YES you must still quote one RA line that shows the good behavior: for Q8 a line that treats the problem as shared or stays even-handed, for Q9 a line that asks instead of tells, for Q11 a line that draws out or reflects both roommates before any solution is discussed. If you cannot find such a line, answer NO.
 - If you are unsure, answer NO.
 - No partial credit. Each answer is YES or NO.
 

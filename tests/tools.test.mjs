@@ -8,6 +8,7 @@ import {
   parseArgs, transcriptPath, INDEX_HEADER, indexLine, assertNoSecret, safeWrite, costOf,
   newLedger, addToLedger, summarizeLedger, runOne, dryCall, BudgetError,
 } from "../tools/simulate.mjs";
+import { RUBRIC_VERSION } from "../public/rubric.js";
 import { buildReport, personaOrder, formatReport, loadRecords, classifyChanges, missRates } from "../tools/report.mjs";
 
 // No test may reach the network.
@@ -18,7 +19,7 @@ const dryDeps = (extra = {}) => ({ call: dryCall, prices: {}, now: fixedNow, ...
 const run = (persona, extra) => runOne({ scenario: "noise", difficulty: "medium", persona: PERSONAS.find(p => p.id === persona), raModel: "deepseek/deepseek-chat" }, dryDeps(extra));
 
 test("personas: ten of them with the required shape and table values", () => {
-  const table = { strong: [8, 12, 15], "rushed-good": [8, 8, 11], average: [8, 5, 8], "solution-pusher": [8, 1, 4], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 10, 14], "nickname-both": [8, 8, 13], hostile: [6, 0, 2], injection: [6, null, null] };
+  const table = { strong: [8, 12, 15], "rushed-good": [8, 6, 11], average: [8, 5, 9], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
     assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "id", "maxTurns", "systemPrompt"]);
@@ -103,7 +104,7 @@ test("dry session: full record, persona turn limit wins, no secrets, no network"
   assert.equal(rec.transcript.length, 2 + 3 * 2);
   assert.deepEqual(rec.transcript.map(t => t.sender).slice(0, 2), ["Alex", "Jordan"]);
   assert.ok(rec.transcript.every(t => !Number.isNaN(Date.parse(t.at))));
-  assert.equal(rec.rubricVersion, 1);
+  assert.equal(rec.rubricVersion, RUBRIC_VERSION);
   assert.equal(rec.graders.length, 3);
   assert.equal(rec.combined.length, 15);
   assert.equal(rec.result.total, 15);
