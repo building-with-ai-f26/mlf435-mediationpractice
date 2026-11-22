@@ -6,7 +6,9 @@ import { isOriginAllowed, isHostAllowed, parsePublicOrigins, previewOrigins } fr
 import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
 import { validateChatBody } from "./chatBody.mjs";
-import { MAX_TRANSCRIPT_BYTES, validateTranscript, saveTranscript } from "./liveTranscript.mjs";
+import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
+import { readSetting, createVerifier } from "./auth.mjs";
+import { createApiRoutes } from "./apiRoutes.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
@@ -48,6 +50,35 @@ if (!OPENROUTER_API_KEY && fs.existsSync(envPath)) {
 if (!OPENROUTER_API_KEY) {
   console.error("ERROR: OPENROUTER_API_KEY not found in the environment or .env");
   process.exit(1);
+}
+
+// DATABASE_URL and GOOGLE_CLIENT_ID: environment first, then .env. Never logged.
+// The .env.example placeholder counts as "not set", so a fresh copy of it keeps the file fallback.
+const rawDatabaseUrl = readSetting("DATABASE_URL", process.env, envPath);
+const DATABASE_URL = rawDatabaseUrl.includes("USER:PASSWORD@HOST") ? "" : rawDatabaseUrl;
+const GOOGLE_CLIENT_ID = readSetting("GOOGLE_CLIENT_ID", process.env, envPath);
+const verifyUser = createVerifier({ clientId: GOOGLE_CLIENT_ID, allowedDomain: (process.env.ALLOWED_GOOGLE_DOMAIN || "").trim() });
+let sqlPromise = null;
+// Without DATABASE_URL, query is null and sessions go to transcripts/live/ as before.
+const query = DATABASE_URL
+  ? async (text, params) => {
+      sqlPromise ||= import("@neondatabase/serverless").then(m => m.neon(DATABASE_URL));
+      try {
+        return await (await sqlPromise).query(text, params);
+      } catch (e) {
+        throw new Error(String(e && e.message || e).split(DATABASE_URL).join("[redacted]"));
+      }
+    }
+  : null;
+const routes = createApiRoutes({
+  verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
+  userCallsPerHour: envNumber(process.env.USER_CALLS_PER_HOUR, 150),
+  userSessionsPerDay: envNumber(process.env.USER_SESSIONS_PER_DAY, 10),
+});
+
+function sendRoute(res, r) {
+  for (const [k, v] of Object.entries(r.headers || {})) res.setHeader(k, v);
+  send(res, r.status, JSON.stringify(r.body), "application/json");
 }
 
 const MIME_TYPES = {
@@ -181,8 +212,8 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "OPTIONS") {
     if (origin !== undefined) {
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     }
     res.writeHead(204);
     res.end();
@@ -196,58 +227,60 @@ const server = http.createServer((req, res) => {
     return send(res, 400, "Bad request");
   }
 
+  if (pathname === "/config.json" && (req.method === "GET" || req.method === "HEAD")) {
+    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID }), "application/json");
+  }
+
   if (pathname === "/api/chat") {
     if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
     if (!LIVE_AI_ENABLED) {
       return sendJsonError(res, 503, "Live AI is turned off on this server right now. Try the practice demo at ?mock=1 instead.");
     }
     if (refusedByRateLimit(req, res)) return;
-    if (dailyCap.reached()) {
-      return sendJsonError(res, 503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
-    }
-    return readBody(req, res, async text => {
-      let input;
-      try {
-        input = JSON.parse(text);
-      } catch {
-        return sendJsonError(res, 400, "Invalid JSON");
-      }
-      const { clean, error } = validateChatBody(input, ALLOWED_MODELS);
-      if (error) return sendJsonError(res, 400, error);
-      if (dailyCap.reached()) {
-        return sendJsonError(res, 503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
-      }
-      dailyCap.count();
-      try {
-        const { status, ok, data } = await proxyToOpenRouter(clean);
-        if (!ok) {
-          const msg = data.error?.message || `OpenRouter error: ${status}`;
-          console.error("Upstream error:", status, msg);
-          return sendJsonError(res, status, msg);
+    // Order: per IP limit (above), then login, then per user limit, then the daily cap. Only a logged in call is counted.
+    return routes.guardChat(req.headers).then(refused => {
+      if (refused) return sendRoute(res, refused);
+      readBody(req, res, async text => {
+        let input;
+        try {
+          input = JSON.parse(text);
+        } catch {
+          return sendJsonError(res, 400, "Invalid JSON");
         }
-        send(res, 200, JSON.stringify(data), "application/json");
-      } catch (err) {
-        console.error("Proxy error:", err.message);
-        sendJsonError(res, err.name === "TimeoutError" ? 504 : 502, "Upstream request failed");
-      }
+        const { clean, error } = validateChatBody(input, ALLOWED_MODELS);
+        if (error) return sendJsonError(res, 400, error);
+        if (dailyCap.reached()) {
+          return sendJsonError(res, 503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
+        }
+        dailyCap.count();
+        try {
+          const { status, ok, data } = await proxyToOpenRouter(clean);
+          if (!ok) {
+            const msg = data.error?.message || `OpenRouter error: ${status}`;
+            console.error("Upstream error:", status, msg);
+            return sendJsonError(res, status, msg);
+          }
+          send(res, 200, JSON.stringify(data), "application/json");
+        } catch (err) {
+          console.error("Proxy error:", err.message);
+          sendJsonError(res, err.name === "TimeoutError" ? 504 : 502, "Upstream request failed");
+        }
+      });
     });
   }
 
-  if (pathname === "/api/transcript") {
-    if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
-    if (IS_PREVIEW) return sendJsonError(res, 503, "Saving sessions is turned off in pull request previews.");
+  if (pathname === "/api/transcript" || pathname.startsWith("/api/sessions")) {
+    if (IS_PREVIEW && pathname === "/api/transcript") return sendJsonError(res, 503, "Saving sessions is turned off in pull request previews.");
+    if (pathname === "/api/transcript" && req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
     if (refusedByRateLimit(req, res)) return;
-    return readBody(req, res, text => {
-      const { record, error, status } = validateTranscript(text, { key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT });
-      if (error) return sendJsonError(res, status, error);
-      try {
-        const file = saveTranscript(record, LIVE_DIR);
-        send(res, 200, JSON.stringify({ ok: true, file }), "application/json");
-      } catch (err) {
-        console.error("Transcript save error:", err.message);
-        sendJsonError(res, 500, "Could not save transcript");
-      }
-    }, MAX_TRANSCRIPT_BYTES);
+    const run = text => routes.handle({ method: req.method, pathname, headers: req.headers, text })
+      .then(r => (r ? sendRoute(res, r) : send(res, 404, "Not found")))
+      .catch(err => {
+        console.error("Route error:", pathname.split("/").slice(0, 3).join("/"), String(err.message || err).split(DATABASE_URL || "\0").join("[redacted]"));
+        if (!res.headersSent) sendJsonError(res, 500, "Request failed");
+      });
+    if (pathname === "/api/transcript") return readBody(req, res, run, MAX_TRANSCRIPT_BYTES);
+    return run("");
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {

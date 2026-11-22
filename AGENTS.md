@@ -19,7 +19,7 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
   ```
 - **Start the server:** `LIVE_AI_ENABLED=true node server.mjs` (or `npm start`), then open `http://localhost:3000`. Without `LIVE_AI_ENABLED=true`, `/api/chat` returns 503 and only `?mock=1` works. The key is read from the `OPENROUTER_API_KEY` environment variable first, then from `.env` in the current directory; the server exits with an error if neither has it. It listens on `127.0.0.1`, or on `0.0.0.0` when `NODE_ENV=production`. See "Server environment variables" below.
 - **Run offline (no API calls):** open `http://localhost:3000/?mock=1`. The browser uses canned replies and grades. The server still has to start, so `.env` needs a key line even in mock mode.
-- **Run tests:** `node --test tests/*.test.mjs` (or `npm test`). Deterministic and offline: 199 tests in 21 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
+- **Run tests:** `node --test tests/*.test.mjs` (or `npm test`). Deterministic and offline: 231 tests in 26 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
 - **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 11.
 - **Simulate sessions:** `node tools/simulate.mjs [flags]`. Runs whole sessions (residents, simulated RA, tagger, three graders) directly against OpenRouter, not the local server. Live runs cost money and save one transcript per session under `transcripts/`. Flags, all optional:
 
@@ -54,6 +54,19 @@ All except the key are read from the process environment only (not from `.env`).
 | `RATE_LIMIT_MAX` | `60` | Requests per client IP per window on `/api/chat` and `/api/transcript` (one shared count). Over the limit: 429 with `Retry-After`. In memory, reset on restart. |
 | `RATE_LIMIT_WINDOW_MINUTES` | `10` | Length of that window. |
 | `DAILY_CALL_CAP` | `500` | Global count of valid `/api/chat` calls per UTC day. Once reached: 503. In memory, reset on restart. |
+| `GOOGLE_CLIENT_ID` | none | Read from the environment first, then `.env`. The Google OAuth client id that ID tokens must be issued for. Served to the browser at `/config.json`. It is public, not a secret. Without it nobody can sign in. |
+| `ALLOWED_GOOGLE_DOMAIN` | empty | Optional, environment only. When set, a token is accepted only if `email_verified` is true and its `hd` claim equals this domain. |
+| `USER_CALLS_PER_HOUR` | `150` | Per signed in user, `/api/chat` calls per hour. Over the limit: 429 with `Retry-After`. In memory, reset on restart. |
+| `USER_SESSIONS_PER_DAY` | `10` | Per user, saved sessions per rolling 24 hours, counted from the `sessions` table. Over the limit: 429. Only applies when the database is used. |
+| `DATABASE_URL` | empty | Read from the environment first, then `.env`. Neon Postgres connection string, a secret. The `.env.example` placeholder counts as not set. When empty, sessions are saved as files in `transcripts/live/` as before. Never log it, never commit it, and never use the production string on a dev machine. |
+
+**Server-side auth.** Every call to `/api/chat`, `/api/transcript` and `/api/sessions` needs `Authorization: Bearer <Google ID token>`. `auth.mjs` verifies the token itself with `node:crypto`: RS256 signature against Google's public keys (cached for an hour), issuer, `aud` equal to `GOOGLE_CLIENT_ID`, expiry, and optionally the domain. The user id is the token's `sub`. A missing or bad token gets 401 `Please sign in with Google to continue.` The token is never logged. `GET /config.json` returns `{"googleClientId": ...}` and nothing else. The browser decodes the token only to show `given_name`; it never trusts it.
+
+**Order of checks on `/api/chat`:** live AI on (else 503), per IP limit (429), login (401), per user hourly limit (429), global daily cap (503). Only a logged in call counts toward the daily cap. A failed login never uses up anyone's quota.
+
+**Sessions routes** (`apiRoutes.mjs`), all need login, all scoped to the signed in user's `user_id`:
+- `POST /api/transcript` saves one session. With `DATABASE_URL` it inserts a row in `sessions` (schema in `migrations/0001_sessions.sql`), the RA is always stored as "RA", and the per user daily limit applies. Without it, it writes a file under `transcripts/live/` as before. Refuses bodies containing `sk-or-`, the loaded key, `npg_...` or a `postgres://user:password@` string, more than 500 lines, or an over long scenario or difficulty.
+- `GET /api/sessions` lists the user's 200 newest sessions (no transcript text). `GET /api/sessions/<uuid>` returns one. `DELETE /api/sessions/<uuid>` deletes one. Another user's id returns 404, the same as a missing one. These return 503 when `DATABASE_URL` is not set. The browser does not call them yet.
 
 `GET /healthz` returns `200 {"ok":true,"commit":"<sha>"}` and nothing else. The commit is `RENDER_GIT_COMMIT` on Render, else the local short git hash, else `unknown`. When `IS_PULL_REQUEST` is `true` (a Render preview) the server forces live AI off and `/api/transcript` returns 503 without writing. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. There is no Content-Security-Policy yet because the PostHog snippet is inline.
 
@@ -62,17 +75,19 @@ All except the key are read from the process environment only (not from `.env`).
 - `chatBody.mjs` — Validates the `/api/chat` body: model allowlist, non-empty messages, `max_tokens` (capped at 2000), temperature clamp, `reasoning` shape. Imported by `server.mjs`.
 - `liveTranscript.mjs` — Validates and saves one live session for `POST /api/transcript`: 200 KB cap, refuses `sk-or-` and the loaded key, keeps only known fields, adds `source: "live"` and the git commit, writes the file and the index row. Imported by `server.mjs` and tests.
 - `origins.mjs` — The allowed origins and hosts: `localhost` and `127.0.0.1` on the server port, plus `PUBLIC_ORIGIN`. Imported by `server.mjs`.
-- `limits.mjs` — In-memory per-IP rate limiter, daily call cap and env parsing helpers. Imported by `server.mjs` and tests.
-- `package.json` — Name, version, `type: module`, `engines`, and `start` and `test` scripts. No dependencies.
+- `limits.mjs` — In-memory rate limiter (used per IP and per user), daily call cap and env parsing helpers. Imported by `server.mjs`, `apiRoutes.mjs` and tests.
+- `auth.mjs` — Google ID token verification (`createVerifier`) and `readSetting` (environment, then `.env`). No dependencies. Imported by `server.mjs` and tests.
+- `apiRoutes.mjs` — Login check, per user chat limit, and the `/api/transcript` and `/api/sessions` logic. No HTTP in it, so tests pass stubs for the verifier and the database. Imported by `server.mjs` and tests.
+- `package.json` — Name, version, `type: module`, `engines`, and `start` and `test` scripts. One dependency, `@neondatabase/serverless`, loaded only when `DATABASE_URL` is set.
 - `public/index.html` — Single-page app with 3 views: setup, chat, debrief. Loads the PostHog snippet (section 9).
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
-- `public/app.js` — Browser logic: setup, turn flow, calls to `/api/chat` (or mock replies), debrief rendering, analytics events.
+- `public/app.js` — Browser logic: Google sign-in (button from Google Identity Services, token in memory and in `sessionStorage` under `ra_id_token`, `authFetch` adds the Bearer header and on a 401 shows the sign-in screen over the page), setup, turn flow, calls to `/api/chat` (or mock replies), debrief rendering, analytics events. Mock mode and the GitHub Pages demo skip sign-in.
 - `public/logic.js` — Pure, testable logic (ES module): responder routing, request body, reply cleanup, resident openness and tagger parsing, mediation prompt, agreement check, mock-mode flags.
 - `public/config.js` — No-DOM settings and builders: model ids (`MAIN_MODEL`, `GRADER_MODELS`, `TAGGER_MODEL`), token and option constants, `MAX_TURNS` (10), `getProfiles`, Alex and Jordan intro prompts, `createSession()`. Imported by `app.js`, `mock.js`, tests and `tools/`.
 - `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
 - `public/liveRecord.js` — Pure: builds the record `app.js` sends at the end of a live session, replaces the RA name with "RA", and counts token usage per role.
 - `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
-- `tests/` — 21 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
+- `tests/` — 26 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
 - `tools/` — `pull-posthog.mjs` (aggregate analytics to `docs/analytics.json`), `export-live.mjs` (redacted copies of live sessions), `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
 - `transcripts/` — Output of `tools/simulate.mjs`: `YYYY-MM-DD/HHMMSS-<scenario>-<difficulty>-<persona>.json`, plus `index.csv`. Read by `tools/report.mjs`.
 - `transcripts/live/` — Live sessions saved by the server (git-ignored): `YYYY-MM-DD/HHMMSS-<topic>-<difficulty>.json` plus `index.csv`. `tools/report.mjs` skips them (`source: "live"`).
@@ -145,7 +160,7 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to disk for later review.
 
 1. **When:** `app.js` posts the record to `POST /api/transcript` when the debrief finishes. If the tab is closed first, a `pagehide` handler sends a partial record (`partial: true`, no grader results) with `navigator.sendBeacon`. Both need at least 2 RA turns, and a session is sent once. A failed save is logged to the console and never shown or thrown, in the same style as `track()`.
-2. **Route rules:** same Origin and Host checks as `/api/chat`, POST only, body capped at 200 KB, any body containing `sk-or-` (or the loaded key) is refused with 400, only known fields are kept. The server adds `source: "live"` and the git commit; the browser cannot set either.
+2. **Route rules:** same Origin and Host checks as `/api/chat`, POST only, login required (section 2, Server-side auth), body capped at 200 KB, any body containing `sk-or-` (or the loaded key) is refused with 400, only known fields are kept. The server adds `source: "live"` and the git commit; the browser cannot set either.
 3. **Record:** the simulator shape plus `source`: `scenario` (the topic), `difficulty`, `transcript` lines with `turn`, `role` (`ra` or `resident`), `sender` and `text`, `openness` start and per turn, `routing` per turn (who answered and whether code or the router decided), `graders` with answers, `combined`, `result`, `models`, `usage` (calls and tokens per role: resident, tagger, router, graders) and `gitCommit`. Cost is not stored.
 4. **Privacy:** the RA name is replaced by "RA" in the browser before sending, including inside message text. It is skipped if the name is "You" (no name entered), Alex or Jordan. Messages can still contain other personal details, so `transcripts/live/` is git-ignored and sharing goes through `tools/export-live.mjs`.
 5. **PostHog is unchanged:** it still gets counts and labels only. Saved transcripts never go to PostHog.
@@ -163,7 +178,7 @@ Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to 
 10. **Residents agree too easily.** `RESIDENT-NOTES.md` (not yet committed) finds that residents reach agreement whatever the RA does, so the agreement is not a reliable sign of good mediation.
 11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
 12. **Saved data is not managed.** Live sessions pile up in `transcripts/live/` with no cleanup, and a partial save from a closed tab is not merged with a later full one. The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` (except `live/`, which is git-ignored) is not committed and not in `.gitignore`.
-13. **Local only.** The server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
+13. **Mostly local.** Locally the server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
 
 ## Shipping
 Hosting is Render. CI is `.github/workflows/ci.yml`; its one job is named `test` (checkout, `npm ci`, `node --check server.mjs`, `npm test`, `npm audit --audit-level=high`, secret scan).
@@ -203,6 +218,10 @@ Set these in the service's Environment tab. Never commit values.
 | `RATE_LIMIT_MAX` | `60` (default) | Requests per client IP per window on `/api/chat` and `/api/transcript`. |
 | `RATE_LIMIT_WINDOW_MINUTES` | `10` (default) | Length of that window. |
 | `DAILY_CALL_CAP` | `500` (default) | Global `/api/chat` calls per UTC day, then 503. This is the spending guard. Raising it needs approval. |
+| `GOOGLE_CLIENT_ID` | the OAuth client id | Required for sign-in. Add the live URL to the client's authorized JavaScript origins in Google Cloud. |
+| `ALLOWED_GOOGLE_DOMAIN` | optional | Limits sign-in to one Google Workspace domain. |
+| `USER_CALLS_PER_HOUR`, `USER_SESSIONS_PER_DAY` | `150`, `10` (defaults) | Per user limits. Raising them needs approval. |
+| `DATABASE_URL` | Neon connection string, secret | Optional. Without it sessions go to files on the instance's disk. Set by the human only. |
 | `PORT` | set by Render | Listen port. Do not set it yourself. |
 | `RENDER_GIT_COMMIT` | set by Render | Full SHA of the deployed commit. Shown by `/healthz` as `commit`. |
 | `IS_PULL_REQUEST` | set by Render | The string `true` on pull request previews, `false` otherwise. Triggers preview safety. |

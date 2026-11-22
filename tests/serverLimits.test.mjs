@@ -104,7 +104,7 @@ test("LIVE_AI_ENABLED=false also returns 503", async () => {
 test("rate limit: 429 with Retry-After after the limit, on /api/chat and /api/transcript", async () => {
   const s = await start({ LIVE_AI_ENABLED: "true", RATE_LIMIT_MAX: "3" });
   try {
-    for (let i = 0; i < 3; i++) assert.equal((await s.post("/api/chat", "not json")).status, 400);
+    for (let i = 0; i < 3; i++) assert.equal((await s.post("/api/chat", "not json")).status, 401); // no token
     const res = await s.post("/api/chat", "not json");
     assert.equal(res.status, 429);
     assert.ok(Number(res.headers.get("retry-after")) >= 1);
@@ -117,17 +117,15 @@ test("rate limit: 429 with Retry-After after the limit, on /api/chat and /api/tr
 test("x-forwarded-for is ignored outside production", async () => {
   const s = await start({ LIVE_AI_ENABLED: "true", RATE_LIMIT_MAX: "1" });
   try {
-    assert.equal((await s.post("/api/chat", "x", { "X-Forwarded-For": "1.1.1.1" })).status, 400);
+    assert.equal((await s.post("/api/chat", "x", { "X-Forwarded-For": "1.1.1.1" })).status, 401);
     assert.equal((await s.post("/api/chat", "x", { "X-Forwarded-For": "2.2.2.2" })).status, 429);
   } finally { s.stop(); }
 });
 
-test("daily cap: 503 once reached", async () => {
+test("daily cap: a full cap does not change the answer for a caller who is not logged in (401, not 503)", async () => {
   const s = await start({ LIVE_AI_ENABLED: "true", DAILY_CALL_CAP: "0" });
   try {
-    const res = await s.post("/api/chat", validChat);
-    assert.equal(res.status, 503);
-    assert.match((await res.json()).error.message, /daily limit/);
+    assert.equal((await s.post("/api/chat", validChat)).status, 401);
   } finally { s.stop(); }
 });
 
