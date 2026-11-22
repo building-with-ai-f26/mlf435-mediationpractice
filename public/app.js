@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -15,6 +15,13 @@ function track(event, props) {
   try { window.posthog && window.posthog.capture(event, props); } catch (e) { /* ignore */ }
 }
 try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search) }); } catch (e) { /* ignore */ }
+
+// Footer build label from /healthz. Silent on any failure (demo and mock hosts have no /healthz).
+fetch("/healthz").then(r => r.ok ? r.json() : null).then(h => {
+  const label = formatBuildLabel(h);
+  const el = document.getElementById("build-footer");
+  if (label && el) { el.textContent = label; el.hidden = false; }
+}).catch(() => {});
 
 const HINTS = [
   "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
