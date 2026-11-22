@@ -2,7 +2,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { URL } from "url";
-import { isOriginAllowed, isHostAllowed, parsePublicOrigins } from "./origins.mjs";
+import { isOriginAllowed, isHostAllowed, parsePublicOrigins, previewOrigins } from "./origins.mjs";
 import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
 import { validateChatBody } from "./chatBody.mjs";
@@ -11,6 +11,8 @@ import { MAX_TRANSCRIPT_BYTES, validateTranscript, saveTranscript } from "./live
 const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
 const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGIN);
+// On a Render preview only, also accept the preview's own hostname from the environment.
+const ACCEPTED_ORIGINS = [...PUBLIC_ORIGINS, ...previewOrigins(process.env)];
 const ALLOWED_ORIGIN = PUBLIC_ORIGINS[0] || `http://localhost:${PORT}`;
 // Render sets IS_PULL_REQUEST to the string "true" on pull request previews. A preview never calls the AI or writes files.
 const IS_PREVIEW = envFlag(process.env.IS_PULL_REQUEST);
@@ -164,12 +166,12 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
 
   // Only the app's own origin may call us. Browsers always send Origin on cross-site requests.
-  if (origin !== undefined && !isOriginAllowed(origin, PORT, PUBLIC_ORIGINS)) {
+  if (origin !== undefined && !isOriginAllowed(origin, PORT, ACCEPTED_ORIGINS)) {
     return sendJsonError(res, 403, "Origin not allowed");
   }
   // Reject unexpected Host headers (DNS rebinding).
   const host = req.headers.host;
-  if (!isHostAllowed(host, PORT, PUBLIC_ORIGINS)) {
+  if (!isHostAllowed(host, PORT, ACCEPTED_ORIGINS)) {
     return sendJsonError(res, 403, "Host not allowed");
   }
   if (origin !== undefined) {
