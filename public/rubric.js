@@ -74,7 +74,9 @@ export function parseRubricReply(raw) {
     if (id < 1 || id > RUBRIC.length || seen.has(id)) continue;
     seen.add(id);
     const yes = m[2].toUpperCase() === "YES";
-    const quote = yes ? (m[3] ?? "").trim().replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
+    // Some graders add commentary after the quote, such as: "Great, Alex." (no quote implies fault; see note).
+    // Drop one trailing parenthetical before stripping the quote marks.
+    const quote = yes ? (m[3] ?? "").trim().replace(/\s*\([^()]*\)\s*$/, "").replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
     answers[id] = { yes, quote };
   }
   return { ok: seen.size >= 10, answers };
@@ -85,17 +87,19 @@ export function verifyEvidence(answers, history) {
   const raTexts = history.filter(h => !isResident(h.sender)).map(h => norm(h.text));
   const verified = {};
   const changed = [];
+  const reasons = {}; // id -> "no_quote" (YES with no quote) or "not_found" (quote is not in any RA message)
   for (const q of RUBRIC) {
     const a = answers[q.id] || { yes: false, quote: "" };
     const quote = norm(a.quote);
     if (a.yes && !(quote && raTexts.some(t => t.includes(quote)))) {
       verified[q.id] = { yes: false, quote: "" };
       changed.push(q.id);
+      reasons[q.id] = quote ? "not_found" : "no_quote";
     } else {
       verified[q.id] = { yes: a.yes, quote: a.quote };
     }
   }
-  return { answers: verified, changed };
+  return { answers: verified, changed, reasons };
 }
 
 // gradings: array of parseRubricReply results (after verifyEvidence). Invalid ones (ok false) are ignored.

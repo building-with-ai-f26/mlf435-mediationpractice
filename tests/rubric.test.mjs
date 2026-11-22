@@ -165,3 +165,24 @@ test("end to end: an RA who only said 'ok' scores 0 even if graders claim YES", 
   const result = scoreFromCombined(combineGraders(graded));
   assert.deepEqual(result, { met: 0, total: 15, score: 0 });
 });
+
+test("commentary after the quote is dropped, so the real RA quote still verifies", () => {
+  const h = [{ sender: "Sam", text: "Great, Alex. Jordan, what do you think?" }];
+  const a = parseRubricReply('Q8: YES | "Great, Alex." (no quote implies fault; see note)').answers;
+  assert.equal(a[8].quote, "Great, Alex.");
+  const v = verifyEvidence(a, h);
+  assert.deepEqual(v.changed, []);
+  assert.equal(v.answers[8].yes, true);
+});
+
+test("verifyEvidence says why a YES changed: no_quote or not_found", () => {
+  const a = parseRubricReply("Q1: YES\nQ2: YES | something nobody said").answers;
+  const v = verifyEvidence(a, history);
+  assert.deepEqual(v.changed, [1, 2]);
+  assert.deepEqual(v.reasons, { 1: "no_quote", 2: "not_found" });
+});
+
+test("a quote copied from a resident message is not_found", () => {
+  const a = parseRubricReply("Q2: YES | I only study late").answers;
+  assert.equal(verifyEvidence(a, history).reasons[2], "not_found");
+});

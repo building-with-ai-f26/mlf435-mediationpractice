@@ -8,7 +8,7 @@ import {
   parseArgs, transcriptPath, INDEX_HEADER, indexLine, assertNoSecret, safeWrite, costOf,
   newLedger, addToLedger, summarizeLedger, runOne, dryCall, BudgetError,
 } from "../tools/simulate.mjs";
-import { buildReport, personaOrder, formatReport, loadRecords } from "../tools/report.mjs";
+import { buildReport, personaOrder, formatReport, loadRecords, classifyChanges, missRates } from "../tools/report.mjs";
 
 // No test may reach the network.
 globalThis.fetch = () => { throw new Error("network call in a test"); };
@@ -190,4 +190,26 @@ test("report reads files, skips dry records unless asked, and handles an empty f
   assert.equal(loadRecords(dir, { includeDry: true }).length, 2);
   assert.equal(formatReport(buildReport([])), "No transcripts found.");
   assert.deepEqual(loadRecords(path.join(dir, "missing")), []);
+});
+
+// ----- changed-YES reasons and per-question miss rates -----
+test("report: classifies each changed YES and counts misses per question", () => {
+  const transcript = [
+    { sender: "Alex", text: "What can we do about the noise?" },
+    { sender: "Sam", text: "Let's set ground rules, one person speaks at a time." },
+  ];
+  const raw = [
+    "Q1: YES",                                                   // no_quote
+    "Q2: YES | let's set ground rules one person speaks at a time", // punctuation only: still not an exact match
+    "Q3: YES | What can we do about the noise",                  // resident words
+    "Q4: YES | invented sentence here",                          // not found
+    "Q5: NO", "Q6: NO", "Q7: NO", "Q8: NO", "Q9: NO", "Q10: NO", "Q11: NO", "Q12: NO", "Q13: NO", "Q14: NO", "Q15: NO",
+  ].join("\n");
+  const rec = { schemaVersion: 1, persona: { id: "strong" }, transcript, result: { met: 0 }, combined: Array.from({ length: 15 }, (_, i) => ({ id: i + 1, met: i === 1 })),
+    graders: [{ name: "DeepSeek", ok: true, raw, metCount: 0, changed: [], answers: {} }] };
+  const kinds = Object.fromEntries(classifyChanges([rec]).map(c => [c.q, c.kind]));
+  assert.deepEqual(kinds, { 1: "no_quote", 2: "punctuation_only", 3: "resident_words", 4: "not_found" });
+  const m = missRates([rec]);
+  assert.equal(m.length, 15);
+  assert.deepEqual([m[0].missed, m[1].missed, m[0].share], [1, 0, 1]);
 });

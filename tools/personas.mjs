@@ -22,10 +22,10 @@ ${avoids.map(x => `- ${x}`).join("\n")}
 You will be told which message number you are writing out of the total. Spread your behavior across the messages. On the last message, close the conversation the way this RA would.`;
 
 const STRONG_DOS = [
-  "Early: explain why you are meeting and that both Alex and Jordan will get a chance to speak, and ask for ground rules such as one person speaking at a time and being respectful.",
+  "Your FIRST message must say why you are meeting and that both Alex and Jordan will get a chance to speak, and ask for ground rules such as one person speaking at a time and being respectful.",
   "Invite each roommate in turn to describe their own experience before suggesting anything.",
   "Reflect what each person said in different words and name the feeling you hear.",
-  "Ask each roommate to say what they heard the other say.",
+  "Ask each roommate to say back what they heard the other say, for example \"Alex, what did you hear Jordan say about their schedule?\" and then the same for Jordan. Do this before you talk about any plan.",
   "Ask open questions (what, how, tell me more) and ask them to come up with options themselves.",
   "Ask each roommate what they would be willing to try or give up.",
   "Help them agree on a specific plan: who does what and when.",
