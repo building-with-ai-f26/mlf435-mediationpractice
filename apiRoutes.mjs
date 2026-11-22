@@ -9,7 +9,7 @@ const LIST_COLUMNS = "id, scenario_id, topic, difficulty, started_at, ended_at, 
 const err = (status, message, headers) => ({ status, body: { error: { message } }, headers });
 const ok = (body, status = 200) => ({ status, body });
 // Error name and message only, with any connection string removed. Used for the [save-failed] log line.
-const safeError = e => `${String(e && e.name || "Error")}: ${String(e && e.message || e).replace(/postgres(?:ql)?:\/\/\S*/gi, "[redacted]")}`;
+const safeError = e => [String(e && e.name || "Error"), String(e && e.message || e).replace(/postgres(?:ql)?:\/\/\S*/gi, "[redacted]")];
 
 export function createApiRoutes({
   verifyUser, query = null, dailyCap = null, liveAiEnabled = false, key = "", gitCommit = "unknown", liveDir = "transcripts/live",
@@ -36,21 +36,31 @@ export function createApiRoutes({
     return null;
   }
 
+  // Every attempt logs one line: [save-ok] or [save-failed], with an error name and message only.
+  // Never the connection string, token, user id or transcript text. Refusals use fixed messages.
+  const failed = (name, message, response) => { log("[save-failed]", `${name}: ${message}`); return response; };
+
   async function saveSession(headers, text) {
     // The database needs a user, so a login is also required whenever the database is used.
     let user = null;
     if (liveAiEnabled || query) {
       user = await authenticate(headers);
-      if (!user) return needLogin;
+      if (!user) return failed("Unauthorized", "no valid Google sign-in on the request", needLogin);
     }
     const { record, error, status } = validateTranscript(text, { key, gitCommit });
-    if (error) return err(status, error);
-    if (!query) return ok({ ok: true, file: saveFile(record, liveDir) });
+    if (error) return failed("Refused", `${status} ${error}`, err(status, error));
     try {
-      return await saveToDatabase(user, record);
+      if (!query) {
+        const file = saveFile(record, liveDir);
+        log("[save-ok]", "file mode");
+        return ok({ ok: true, file });
+      }
+      const r = await saveToDatabase(user, record);
+      if (r.status === 200) log("[save-ok]", "database mode");
+      else failed("Refused", `${r.status} ${r.body.error.message}`);
+      return r;
     } catch (e) {
-      log("[save-failed]", safeError(e));
-      return err(500, "Could not save the session.");
+      return failed(...safeError(e), err(500, "Could not save the session."));
     }
   }
 

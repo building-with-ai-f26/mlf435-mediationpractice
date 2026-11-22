@@ -71,12 +71,14 @@ const query = DATABASE_URL
       try {
         return await (await sqlPromise).query(text, params);
       } catch (e) {
+        sqlPromise = null; // do not keep a failed load for the life of the process
         const safe = new Error(String(e && e.message || e).split(DATABASE_URL).join("[redacted]"));
         safe.name = String(e && e.name || "Error"); // keep the name (e.g. NeonDbError) for the log
         throw safe;
       }
     }
   : null;
+console.log(`[startup] session saving: ${query ? "database mode (sessions table)" : "file mode (transcripts/live/)"}`);
 const routes = createApiRoutes({
   verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
   userCallsPerHour: envNumber(process.env.USER_CALLS_PER_HOUR, 150),
