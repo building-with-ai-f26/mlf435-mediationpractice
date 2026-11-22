@@ -12,7 +12,9 @@ const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
 const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGIN);
 const ALLOWED_ORIGIN = PUBLIC_ORIGINS[0] || `http://localhost:${PORT}`;
-const LIVE_AI_ENABLED = envFlag(process.env.LIVE_AI_ENABLED);
+// Render sets IS_PULL_REQUEST to the string "true" on pull request previews. A preview never calls the AI or writes files.
+const IS_PREVIEW = envFlag(process.env.IS_PULL_REQUEST);
+const LIVE_AI_ENABLED = !IS_PREVIEW && envFlag(process.env.LIVE_AI_ENABLED);
 const rateLimiter = createRateLimiter({
   max: envNumber(process.env.RATE_LIMIT_MAX, 60),
   windowMs: envNumber(process.env.RATE_LIMIT_WINDOW_MINUTES, 10) * 60 * 1000,
@@ -20,8 +22,10 @@ const rateLimiter = createRateLimiter({
 const dailyCap = createDailyCap(envNumber(process.env.DAILY_CALL_CAP, 500));
 const MAX_BODY_BYTES = 64 * 1024;
 const LIVE_DIR = path.join(process.cwd(), "transcripts", "live");
+// Render sets RENDER_GIT_COMMIT to the full SHA of the deploy. Locally we fall back to git.
 let GIT_COMMIT = "unknown";
 try { GIT_COMMIT = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "unknown"; } catch { /* not a git checkout */ }
+const DEPLOY_COMMIT = (process.env.RENDER_GIT_COMMIT || "").trim() || GIT_COMMIT;
 
 // Keep in sync with public/app.js (MAIN_MODEL, GRADER_MODELS, CONSOLIDATOR_MODEL). The two lists must match.
 const ALLOWED_MODELS = new Set([
@@ -154,7 +158,7 @@ const server = http.createServer((req, res) => {
 
   // Health check for the host platform. Before the Host check because probes use internal hostnames. No secrets.
   if ((req.method === "GET" || req.method === "HEAD") && req.url.split("?")[0] === "/healthz") {
-    return send(res, 200, JSON.stringify({ ok: true }), "application/json");
+    return send(res, 200, JSON.stringify({ ok: true, commit: DEPLOY_COMMIT }), "application/json");
   }
 
   const origin = req.headers.origin;
@@ -229,6 +233,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === "/api/transcript") {
     if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
+    if (IS_PREVIEW) return sendJsonError(res, 503, "Saving sessions is turned off in pull request previews.");
     if (refusedByRateLimit(req, res)) return;
     return readBody(req, res, text => {
       const { record, error, status } = validateTranscript(text, { key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT });
@@ -251,5 +256,5 @@ const server = http.createServer((req, res) => {
 
 const HOST = PRODUCTION ? "0.0.0.0" : "127.0.0.1";
 server.listen(PORT, HOST, () => {
-  console.log(`Server running at ${ALLOWED_ORIGIN} (listening on ${HOST}:${PORT}, live AI ${LIVE_AI_ENABLED ? "on" : "off"})`);
+  console.log(`Server running at ${ALLOWED_ORIGIN} (listening on ${HOST}:${PORT}, live AI ${LIVE_AI_ENABLED ? "on" : "off"}${IS_PREVIEW ? ", pull request preview, saving off" : ""})`);
 });
