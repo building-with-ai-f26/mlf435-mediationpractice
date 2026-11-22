@@ -19,7 +19,7 @@ const dryDeps = (extra = {}) => ({ call: dryCall, prices: {}, now: fixedNow, ...
 const run = (persona, extra) => runOne({ scenario: "noise", difficulty: "medium", persona: PERSONAS.find(p => p.id === persona), raModel: "deepseek/deepseek-chat" }, dryDeps(extra));
 
 test("personas: ten of them with the required shape and table values", () => {
-  const table = { strong: [8, 12, 15], "rushed-good": [8, 8, 11], average: [8, 5, 8], "solution-pusher": [8, 1, 4], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 10, 14], "nickname-both": [8, 8, 13], hostile: [6, 0, 2], injection: [6, null, null] };
+  const table = { strong: [8, 12, 15], "rushed-good": [8, 6, 11], average: [8, 5, 9], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
     assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "id", "maxTurns", "systemPrompt"]);
