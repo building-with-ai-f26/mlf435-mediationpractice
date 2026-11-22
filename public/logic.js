@@ -365,3 +365,28 @@ export function formatBuildLabel(health) {
   if (!/^[0-9a-f]{4,40}$/i.test(c)) return "";
   return `Build ${c.slice(0, 7)}`;
 }
+
+// Pure. Reads the payload of a Google ID token. The browser only uses it for display and expiry;
+// the server is the one that verifies the token. Returns null when it cannot be read.
+export function decodeIdToken(token) {
+  try {
+    const part = String(token || "").split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+    const payload = JSON.parse(new TextDecoder().decode(bytes));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch { return null; }
+}
+
+// Pure. True when the token reads and has not expired (30 second margin).
+export function isTokenValid(token, nowMs) {
+  const p = decodeIdToken(token);
+  return !!(p && typeof p.exp === "number" && p.exp * 1000 > nowMs + 30000);
+}
+
+// Pure. "local" for localhost and 127.0.0.1, "production" otherwise.
+export function getEnvName(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" ? "local" : "production";
+}
