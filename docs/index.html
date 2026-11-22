@@ -158,6 +158,7 @@
       <p class="tagline">A practice tool for Resident Assistants that lets them mediate simulated roommate conflicts with AI roommates, alone and on demand.</p>
       <div class="cta-row">
         <a class="btn" href="demo/" onclick="window.posthog && posthog.capture('clicked_try_product')">See the Product →</a>
+        <a class="btn btn-secondary" href="https://ra-practice.onrender.com/">Open the live app</a>
         <a class="btn btn-secondary" href="#prd">Read the Living PRD</a>
         <a class="btn btn-secondary" href="#build-log">Weekly Build Log</a>
       </div>
@@ -167,8 +168,9 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> Build 2: local app with live AI, yes/no rubric scoring and an automated tester; the hosted demo is scripted<br />
-        <strong>Demo:</strong> <a href="demo/">Open the demo</a>. It runs a full session with scripted roommate replies and a scripted debrief, so it needs no key and costs nothing. The live AI version runs locally for now.
+        <strong>Current Status:</strong> Build 3: public app with Google sign-in, saved sessions and a security audit; the hosted demo on this page stays scripted<br />
+        <strong>Live app:</strong> <a href="https://ra-practice.onrender.com/">Open the live app</a>. It needs a Google sign-in. The free Render instance sleeps when idle, so the first load can take up to a minute.<br />
+        <strong>Demo:</strong> <a href="demo/">Open the demo</a>. It runs a full session with scripted roommate replies and a scripted debrief, so it needs no key and costs nothing.
       </p>
       <p>
         <img src="screenshots/b2-live-chat.png" alt="Build 2 live run: RA mediating between two AI roommates in the local app" style="max-width: 100%; border-radius: 8px; border: 1px solid #e5e7eb;" />
@@ -200,21 +202,30 @@
         <li><strong>In Scope (Core Workflow):</strong> The RA picks a topic (cleaning, guest policy, hygiene, noise, shared items, religious practice) and a difficulty (easy, medium, hard). Two AI roommates with distinct personalities and opposing positions begin the conflict. The RA mediates by typing. Voice is planned after testing. The roommates answer in turn by name. The RA ends the session and sees a debrief: a score out of 15 from a yes/no rubric, how the three AI graders agreed on each question, and one tip for the first missed question.</li>
         <li><strong>Out of Scope #1:</strong> The other scenarios (Boundary Setting, Difficult Parent, Resident Disengagement, Bias Incident, Party with Alcohol, Drug Use, Depression and Suicidal Ideation, Alcohol Intoxication, Sitting with Discomfort). Roommate Conflict only for now.</li>
         <li><strong>Out of Scope #2:</strong> Real-time listening and live coaching prompts during a real mediation. That is the long-term vision, not v1.</li>
-        <li><strong>Out of Scope #3:</strong> Accounts, saved transcripts, and public hosting of the app. The prototype runs locally on my computer.</li>
+        <li><strong>Now in scope (was Out of Scope #3):</strong> Accounts, saved transcripts, and public hosting. The app is hosted on Render, RAs sign in with Google, and finished sessions are saved to a database.</li>
+        <li><strong>Still out of scope #3:</strong> Real student data. The conflicts are made up, and RAs should not type real residents' names or details. Saved sessions can still hold whatever an RA types, which is why they are private to each user (see section 4).</li>
       </ul>
 
-      <h3>3. How It Works Under the Hood & Riskiest Assumption (PRD v2)</h3>
-      <p><strong>Biggest risk:</strong> The AI roommates and graders may not be realistic or fair enough for an RA to trust the practice.</p>
+      <h3>3. How It Works Under the Hood & Riskiest Assumption (PRD v3)</h3>
+      <p><strong>Biggest risk:</strong> The AI roommates and graders may not be realistic or fair enough for an RA to trust the practice. This is still the riskiest assumption. Build 3 did not add new calibration runs, so the results below are the Build 2 results. Hosting adds a second, separate risk: a public app with a paid AI key and saved transcripts has to keep each RA's sessions private and keep spending bounded. SECURITY.md records the checks, findings and open items. Known gap: residents tend to reach agreement whatever the RA does, so agreement is not a reliable sign of good mediation.</p>
       <p><strong>How this build tests it:</strong> A calibration run with an automated tester. It plays whole sessions with simulated RAs: ten personas are defined (strong, rushed-good, average, solution-pusher, side-taker, minimal, typo-good, nickname-both, hostile, injection), each with an expected score range out of 15. The pass target is that each persona lands inside its range, for example strong 12-15, average 5-8, hostile 0-2. This run covered 8 sessions (noise topic, medium difficulty, one session per persona); side-taker and minimal have not been run yet. Results: 4 of 7 personas with a range landed in range (typo-good, nickname-both, average, hostile). 3 were out of range: strong scored 7 (expected 12-15), rushed-good scored 5 (expected 8-11), solution-pusher scored 0 (expected 1-4). The injection persona scored 0 and has no range. The graders disagreed on 34 of 120 questions (28.3%). The evidence check changed YES answers to NO 4 times for DeepSeek, 1 time for Claude and 0 times for Gemini. With one session per persona this is a first signal, not a reliable measure. [Next step: more runs per persona, and the two personas not yet run.]</p>
-      <p><strong>How it works:</strong> The browser sends each message to a local server, which adds the API key and forwards the request to OpenRouter. Two AI roommates, Alex and Jordan, answer in turn. When the RA ends the session, three AI graders each answer a 15-question yes/no rubric. A YES counts only if it includes a short quote that code finds in the RA's own lines (the evidence check). Each question is met by majority vote, and the score is computed in code, not by a model. The automated tester runs whole sessions against the same prompts and saves a transcript and a report.</p>
+      <p><strong>How it works:</strong> The browser sends each message to the app's server, which adds the API key and forwards the request to OpenRouter. Two AI roommates, Alex and Jordan, answer in turn. When the RA ends the session, three AI graders each answer a 15-question yes/no rubric. A YES counts only if it includes a short quote that code finds in the RA's own lines (the evidence check). Each question is met by majority vote, and the score is computed in code, not by a model. The automated tester runs whole sessions against the same prompts and saves a transcript and a report.</p>
 
       <h3>4. Technical Notes</h3>
-      <p>The prototype runs locally and calls OpenRouter (DeepSeek for the roommates; DeepSeek, Claude Haiku and Gemini Flash as graders). The API key lives only in a local <code>.env</code> file that is gitignored and is never committed. The repo is public. If the app is ever hosted publicly, the key will need to sit behind a small proxy, not in the site's code.</p>
+      <p><strong>Architecture:</strong> A small Node server (built-in <code>http</code> module, plain HTML, CSS and JavaScript in the browser) hosted on Render at <a href="https://ra-practice.onrender.com/">ra-practice.onrender.com</a>. It calls OpenRouter (DeepSeek for the roommates; DeepSeek, Claude Haiku and Gemini Flash as graders) and saves sessions to a Neon Postgres database. The repo is public.</p>
+      <ul>
+        <li><strong>Hosting:</strong> Render deploys <code>main</code> only after the CI check named <code>test</code> passes. Pull request previews force live AI off and refuse saving. <code>/healthz</code> shows the deployed commit, and a rollback was practiced.</li>
+        <li><strong>Sign-in:</strong> The browser gets a Google ID token. The server verifies it itself on every call to <code>/api/chat</code>, <code>/api/transcript</code> and <code>/api/sessions</code> (signature, issuer, audience, expiry, and optionally the email domain). The browser only reads the first name to display and never trusts the token. Without a valid token the server returns 401.</li>
+        <li><strong>Database:</strong> Neon Postgres, one <code>sessions</code> table. Every row has a <code>user_id</code> (the Google account id), and every query is filtered to the signed-in user, so another user's session id returns 404. The browser never connects to the database; only the server does. The RA's name is stored as "RA".</li>
+        <li><strong>Key stays server-side:</strong> The OpenRouter key and the database connection string live only in the server's environment. The browser sends requests to the server, which adds the key. The key is never sent to the browser, logged or committed.</li>
+        <li><strong>Rate limits and spending:</strong> Limits per IP address and per signed-in user (150 AI calls per hour by default), 10 saved sessions per user per day, and a global daily cap of 500 AI calls (the spending guard). A model allowlist, a request size cap and message validation limit what the server will forward. Setting <code>LIVE_AI_ENABLED=false</code> stops all AI calls at once. OpenRouter spending limit: [amount and where it is set]. These counters are in memory and reset on restart.</li>
+        <li><strong>Open items:</strong> No Content-Security-Policy yet, and no live test of stored script injection. See <a href="https://github.com/[owner]/[repo]/blob/main/SECURITY.md">SECURITY.md</a> for the checks, findings, fixes, CI checks, rollback and backups. [repo URL]</li>
+      </ul>
       <h3>5. Unit Economics & Analytics Snapshot</h3>
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">at least $11.17</div>
+          <div class="stat-value">at least $19.32</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
@@ -259,9 +270,10 @@
       <div class="log-entry">
         <h3>Build 3 · Build.exe: The Core Workflow (Due Nov 23)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [End-to-end workflow working with real inputs + PostHog funnel events]</li>
-          <li><strong>What broke / changed in PRD:</strong> [Fill in]</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>What shipped:</strong> The app is public on Render at ra-practice.onrender.com. Google sign-in verified by the server (<code>auth.mjs</code>, no dependencies), with per-user limits on AI calls and saved sessions. Saved sessions go to a Neon Postgres <code>sessions</code> table through a numbered migration and a migration runner, with every query scoped to the signed-in user. Also: a CI workflow (<code>test</code>) that gates deploys, <code>/healthz</code> with the deployed commit, pull request previews that cannot call the AI or save, a post-deploy smoke script, the build commit shown in the page footer, a read-only sessions backup script, <code>CLAUDE.md</code> importing <code>AGENTS.md</code> with project deny permissions, and SECURITY.md. Automated tests: 252 passing in 29 files. The hosted demo on this page stays scripted. [PostHog funnel events seen in the dashboard: confirm.]</li>
+          <li><strong>Things learned with AI:</strong> The rules in AGENTS.md came from real mistakes: never report a vulnerability without reproducing it with a command and showing the output; do not create new config files or revert my model choices unless I ask; read the real config location before saying where config lives. Other rules I wrote: plan before touching several files, small batches, stop and ask after a fix fails twice, and an "Ask me first" list (database changes, keys and env vars, spending limits, dependencies, force-pushes, production migrations). Agents never merge. The security review (an agent run against a local server, nothing edited) found 5 issues. The top one reproduced: with no token, 21 calls to <code>/api/transcript</code> wrote 21 files. Others: the per-IP limit could be bypassed by rotating the first <code>x-forwarded-for</code> entry, a few free Google accounts could use up the daily cap, and <code>/api/chat</code> forwarded messages unchecked. Attacks that failed: forged or expired tokens, reading or deleting another user's session (404), origin and Host tricks, and off-list models. With two accounts on the live site, reading and deleting the other account's session both returned 404, and with the per-user limit set to 20, 30 calls gave 200 for calls 1 to 20 and 429 for calls 21 to 30. The key search found no real keys in tracked files, history or the live site, but real keys had been printed in my terminal output during the check. Details and status of each fix are in SECURITY.md.</li>
+          <li><strong>What broke / changed in PRD:</strong> [what went wrong this week and how I fixed it] PRD changes: accounts, saved transcripts and public hosting moved from out of scope to in scope; real student data and the other scenarios stay out; the architecture note now covers Render, server-verified sign-in, the Neon database and the limits; a hosting and data privacy risk was added beside the realism risk.</li>
+          <li><strong>Cost & time this week:</strong> at least $19.32 cumulative (at least $8.15 more than the $11.17 shown for Build 2) · 5 hours. Commits on Nov 21 and Nov 22 (git log shows 7 commits on Nov 21 and 4 on Nov 22; the earlier commits are from Nov 1, 7, 9 and 15).</li>
         </ul>
       </div>
 
