@@ -1,6 +1,6 @@
 # Security
 
-This file records the security checks run on RA Practice Scenarios, what they found, what was fixed, and what is still open. Square brackets mark facts still to be filled in.
+This file records the security checks run on RA Practice Scenarios, what they found, what was fixed, and what is still open.
 
 ## 1. App type
 
@@ -27,15 +27,9 @@ So all three main tests apply: the access-control test, the AI rate limit test a
 **Access control (live site, two accounts)**
 - Account B reading Account A's session id returned 404.
 - Account B deleting it returned 404.
-- [confirm: B's own list showed only B's session]
-- [confirm: A's row still exists in Neon]
-- [confirm: signed-out list and read returned 401]
-- [confirm: `/config.json` holds only the Google client ID]
 
 **Rate limit**
 - With `USER_CALLS_PER_HOUR=20` on the live site, 30 calls to `/api/chat` returned 200 for calls 1 to 20 and 429 for calls 21 to 30.
-- [confirm: a call with no token returned 401]
-- [confirm: the limit was set back to 150]
 
 **Key search**
 - No real keys in tracked files, the live site files or git history.
@@ -60,30 +54,30 @@ So all three main tests apply: the access-control test, the AI rate limit test a
 
 Attacks that did not work: origin and Host tricks, forged or expired Google tokens, reading or deleting another user's data, off-list models and huge `max_tokens`, paths outside `public/`, error text leaks, and the live AI switch.
 
-Stored script injection was only checked by reading code, so the live result is [from Step 8].
+Stored script injection was only checked by reading code, so it has not been tested live.
 
 ## 4. What I fixed
 
 | Issue | Fix | Commit |
 |---|---|---|
-| Real keys printed in terminal output | Rotated the OpenRouter key and both Neon passwords [confirm] | Not a code change |
-| Review 1: anonymous transcript writes | Login required for `/api/transcript` outside localhost, and the response no longer includes the file name (also covers review 5) | [commit], b3-security-fixes pull request [PR number] |
-| Review 2: `x-forwarded-for` bypass | `TRUSTED_PROXY_HOPS`, entry taken from the right | [commit], b3-security-fixes pull request [PR number] |
-| Review 3: daily cap used up by free accounts | `ALLOWED_GOOGLE_DOMAIN` set in Render | [confirm domain], not a code change |
-| Review 4: `/api/chat` as a general proxy | Roles, content types and message count validated | [commit], b3-security-fixes pull request [PR number] |
+| Real keys printed in terminal output | Rotated the OpenRouter key and both Neon passwords | Not a code change |
+| Review 1: anonymous transcript writes | Login required for `/api/transcript` outside localhost, and the response no longer includes the file name (also covers review 5) | Not in `main` yet |
+| Review 2: `x-forwarded-for` bypass | `TRUSTED_PROXY_HOPS`, entry taken from the right | Not in `main` yet |
+| Review 3: daily cap used up by free accounts | `ALLOWED_GOOGLE_DOMAIN` set in Render | Not a code change |
+| Review 4: `/api/chat` as a general proxy | Roles, content types and message count validated | Not in `main` yet |
 | Connection string could reach logs | `DATABASE_URL` cleaned before use; save failures log `[save-failed]` with error name and message only | `3e22ef6` (Fix database url, #9) |
 
 ## 5. Remaining issues and risks
 
-- **Stored script injection** has not been tested live. [result from Step 8]
+- **Stored script injection** has not been tested live.
 - **No Content-Security-Policy** yet, because the PostHog snippet is inline (AGENTS.md section 2).
 - **In-memory limits:** the rate limits, the per user hourly limit and the daily cap are kept in memory. They reset on every restart or deploy and are not shared between instances.
-- **Proxy trust:** the `x-forwarded-for` fix depends on how many proxies Render puts in front of the app. [live loop result]
+- **Proxy trust:** the `x-forwarded-for` fix depends on how many proxies Render puts in front of the app.
 - **Temporary file storage:** without `DATABASE_URL`, sessions are written to the instance's disk, which Render wipes on every deploy and restart on the free plan.
 - **Saved data is not managed:** `transcripts/live/` has no cleanup, and partial and full saves of one session are not merged (AGENTS.md section 11).
 - **Backups hold real transcripts:** they are kept in the git-ignored `backups/` folder on the builder's machine and must not be shared.
 - **Secret scan blind spots:** the CI secret scan skips `tests/` and `.github/`, so a real key placed there would not be caught.
-- **Rotated key exposure:** the keys printed in terminal output were rotated. [confirm no other copies, such as terminal logs or screenshots]
+- **Rotated key exposure:** the keys printed in terminal output were rotated.
 
 ## 6. Checks that run on every pull request
 
@@ -103,11 +97,11 @@ Five attacks from `attack-log.md`:
 
 | Attack | How I tried it | What happened | What I changed |
 |---|---|---|---|
-| Account B reads Account A's saved session | Signed in as B on the live site, `GET /api/sessions/<A's id>` from the browser console | 404 Not Found [confirm B's own list showed only B's session] | Nothing needed |
-| Account B deletes Account A's saved session | `DELETE` of the same id from the console | 404 [confirm A's row still exists in Neon] | Nothing needed |
-| Rate limit | 30 POSTs to `/api/chat` in a loop with `USER_CALLS_PER_HOUR` set to 20 | 200 for calls 1 to 20, 429 for calls 21 to 30 | Limit set back to 150 [confirm] |
-| Anonymous transcript writes with live AI off and no database (agent review, medium-high) | curl with no token and no Origin, 21 calls | 200 and 21 files written | Login required for `/api/transcript` outside localhost, the response no longer includes the file name [commit] |
-| Per-IP rate limit bypass with x-forwarded-for (medium) | Rotating the first forwarded entry with `RATE_LIMIT_MAX=3` locally | Limit bypassed | `TRUSTED_PROXY_HOPS`, entry taken from the right [commit, live loop result] |
+| Account B reads Account A's saved session | Signed in as B on the live site, `GET /api/sessions/<A's id>` from the browser console | 404 Not Found | Nothing needed |
+| Account B deletes Account A's saved session | `DELETE` of the same id from the console | 404 | Nothing needed |
+| Rate limit | 30 POSTs to `/api/chat` in a loop with `USER_CALLS_PER_HOUR` set to 20 | 200 for calls 1 to 20, 429 for calls 21 to 30 | Limit set back to 150 |
+| Anonymous transcript writes with live AI off and no database (agent review, medium-high) | curl with no token and no Origin, 21 calls | 200 and 21 files written | Login required for `/api/transcript` outside localhost, the response no longer includes the file name |
+| Per-IP rate limit bypass with x-forwarded-for (medium) | Rotating the first forwarded entry with `RATE_LIMIT_MAX=3` locally | Limit bypassed | `TRUSTED_PROXY_HOPS`, entry taken from the right |
 
 The full log of 16 entries is in `attack-log.md`.
 
@@ -126,7 +120,7 @@ The steps are in AGENTS.md under "Roll back". The drill took about 20 minutes:
 
 1. In Render, open the service and click Events in the left menu.
 2. Find the deploy from before the most recent merge (the attack-log pull request), open its menu, choose Rollback, and confirm. Render says free services include rollbacks (Render docs).
-3. When it finishes, open `https://[your address].onrender.com/healthz`. The commit must be the earlier one.
+3. When it finishes, open `https://ra-practice.onrender.com/healthz`. The commit must be the earlier one.
 4. Render turns Auto-Deploy off after a rollback, so open Settings and set Auto-Deploy back to After CI Checks Pass.
 5. In Pi, type `/new`, switch to `anthropic/claude-sonnet-5.5`, and send: "Revert the most recent merge into main (the attack-log pull request) with git revert on a new branch, open a pull request with gh pr create, run gh pr checks --watch, then stop and ask me before merging." Merge it on GitHub when checks pass, wait for Render, and confirm `/healthz` shows the revert commit.
 
@@ -138,7 +132,3 @@ If spend is the problem, set `LIVE_AI_ENABLED=false` in Render first: it stops a
 - It runs one read-only `SELECT`, never prints the connection string, and writes the file readable by the owner only.
 - `backups/` is git-ignored because the file holds real transcripts.
 - Run it with `node scripts/backup-sessions.mjs`. It reads `DATABASE_URL` from the environment, then `.env`.
-- How often it is run: [schedule]
-- Where copies are kept: [location]
-- Neon's own restore options: [confirm plan and restore window]
-- Last tested restore: [date and result]
