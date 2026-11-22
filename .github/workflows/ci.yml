@@ -22,7 +22,7 @@ jobs:
       - run: npm audit --audit-level=high
       - name: Secret scan
         run: |
-          PATTERN='sk-or-v1-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{10,}|sb_secret_[A-Za-z0-9_-]{10,}|phx_[A-Za-z0-9]{20,}|service_role.*eyJ'
+          PATTERN='sk-or-v1-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{10,}|sb_secret_[A-Za-z0-9_-]{10,}|phx_[A-Za-z0-9]{20,}|service_role.*eyJ|npg_[A-Za-z0-9]{12,}|postgres(ql)?://[^:/ ]+:[^@ ]{12,}@'
           # -I skips binary files, -n adds line numbers; cut keeps only file:line so no secret text is printed.
           HITS=$(git grep -InE "$PATTERN" -- . ':(exclude)tests' ':(exclude).github' | cut -d: -f1,2 || true)
           if [ -n "$HITS" ]; then

@@ -52,10 +52,10 @@ test("preview: /api/transcript writes nothing", async () => {
   } finally { s.stop(); }
 });
 
-test("not a preview: IS_PULL_REQUEST=false leaves live AI on (request reaches validation)", async () => {
+test("not a preview: IS_PULL_REQUEST=false leaves live AI on (request reaches the login check)", async () => {
   const s = await start({ IS_PULL_REQUEST: "false", LIVE_AI_ENABLED: "true" });
   try {
     const r = await s.post("/api/chat", { model: "not-allowed", messages: [] });
-    assert.equal(r.status, 400);
+    assert.equal(r.status, 401); // live AI is on, so a Google token is now required
   } finally { s.stop(); }
 });

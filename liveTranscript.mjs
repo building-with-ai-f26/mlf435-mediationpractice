@@ -7,7 +7,12 @@ export const MAX_TRANSCRIPT_BYTES = 200 * 1024;
 export const INDEX_HEADER = "date,file,scenario,difficulty,ra_turns,partial,met,score_pct,deepseek_met,claude_met,gemini_met";
 
 // Only these top-level fields are kept. Anything else the browser sends is dropped.
-const KEEP = ["schemaVersion", "createdAt", "scenario", "difficulty", "partial", "models", "rubricVersion", "openness", "routing", "transcript", "graders", "combined", "result", "usage"];
+const KEEP = ["schemaVersion", "createdAt", "scenario", "scenario_id", "difficulty", "partial", "models", "rubricVersion", "openness", "routing", "transcript", "graders", "combined", "result", "usage"];
+
+// Neon passwords (npg_...) and postgres://user:password@ strings must never be saved.
+const DB_SECRET = /npg_[A-Za-z0-9]{12,}|postgres(ql)?:\/\/[^:/ ]+:[^@ ]{12,}@/;
+const MAX_LINES = 500;
+const DEFAULT_SCENARIO_ID = "roommate-conflict";
 
 const pad = n => String(n).padStart(2, "0");
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -27,6 +32,7 @@ export function validateTranscript(rawText, { key, gitCommit = "unknown" } = {})
   if (rawText.includes("sk-or-") || (key && key.length > 8 && rawText.includes(key))) {
     return { status: 400, error: "Refused: the content looks like it contains an API key" };
   }
+  if (DB_SECRET.test(rawText)) return { status: 400, error: "Refused: the content looks like it contains a database secret" };
   let input;
   try { input = JSON.parse(rawText); } catch { return { status: 400, error: "Invalid JSON" }; }
   if (!input || typeof input !== "object" || Array.isArray(input)) return { status: 400, error: "Invalid transcript" };
@@ -34,8 +40,11 @@ export function validateTranscript(rawText, { key, gitCommit = "unknown" } = {})
   if (typeof input.difficulty !== "string" || !slug(input.difficulty)) return { status: 400, error: "difficulty is required" };
   if (!Array.isArray(input.transcript) || input.transcript.length === 0) return { status: 400, error: "transcript must be a non-empty array" };
   if (!input.transcript.every(t => t && typeof t.text === "string" && typeof t.sender === "string")) return { status: 400, error: "Each transcript line needs sender and text" };
+  if (input.transcript.length > MAX_LINES) return { status: 400, error: "transcript has too many lines" };
+  if (input.scenario.length > 100 || input.difficulty.length > 100) return { status: 400, error: "scenario or difficulty is too long" };
   const record = {};
   for (const k of KEEP) if (input[k] !== undefined) record[k] = input[k];
+  record.scenario_id = typeof input.scenario_id === "string" && /^[a-z0-9-]{1,64}$/.test(input.scenario_id) ? input.scenario_id : DEFAULT_SCENARIO_ID;
   record.schemaVersion = 1;
   record.source = "live";
   record.gitCommit = gitCommit;

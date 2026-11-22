@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -14,7 +14,100 @@ if (MOCK) document.getElementById("demo-banner").hidden = false;
 function track(event, props) {
   try { window.posthog && window.posthog.capture(event, props); } catch (e) { /* ignore */ }
 }
-try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search) }); } catch (e) { /* ignore */ }
+try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search), env: getEnvName(location.hostname) }); } catch (e) { /* ignore */ }
+
+/* ============================================================
+   GOOGLE SIGN-IN (live mode only; mock and the demo skip it)
+   ============================================================ */
+
+const TOKEN_KEY = "ra_id_token";
+let idToken = null;
+try { idToken = sessionStorage.getItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+if (idToken && !isTokenValid(idToken, Date.now())) idToken = null;
+let gsiStarted = false;
+
+function setSignInMessage(text) { const el = document.getElementById("signin-message"); if (el) el.textContent = text; }
+
+function showSignIn(message) {
+  if (MOCK) return;
+  setSignInMessage(message || "");
+  document.getElementById("signin").hidden = false;
+  document.getElementById("user-bar").hidden = true;
+  initGoogle();
+}
+
+function hideSignIn() {
+  document.getElementById("signin").hidden = true;
+  const given = cleanFacilitatorName(decodeIdToken(idToken)?.given_name);
+  document.getElementById("user-greeting").textContent = given ? `Signed in as ${given}` : "Signed in";
+  document.getElementById("user-bar").hidden = false;
+}
+
+function onCredential(response) {
+  const token = response && response.credential;
+  if (!isTokenValid(token, Date.now())) { setSignInMessage("That sign-in did not work. Please try again."); return; }
+  idToken = token;
+  try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) { /* ignore */ }
+  // Only the Google account id (sub) goes to PostHog, never the email or name.
+  try {
+    const sub = decodeIdToken(token)?.sub;
+    if (sub && window.posthog) window.posthog.identify(String(sub));
+  } catch (e) { /* ignore */ }
+  hideSignIn();
+}
+
+function signOut() {
+  idToken = null;
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+  try { window.google?.accounts?.id?.disableAutoSelect(); } catch (e) { /* ignore */ }
+  try {
+    if (window.posthog) {
+      window.posthog.reset();
+      window.posthog.register({ app_mode: getAppMode(location.hostname, location.search), env: getEnvName(location.hostname) });
+    }
+  } catch (e) { /* ignore */ }
+  showSignIn("");
+}
+
+async function initGoogle() {
+  if (gsiStarted) return;
+  let clientId = "";
+  try {
+    const r = await fetch("/config.json");
+    clientId = r.ok ? (await r.json()).googleClientId || "" : "";
+  } catch (e) { /* ignore */ }
+  if (!clientId) { setSignInMessage("Sign-in is not set up on this server."); return; }
+  const start = () => {
+    if (gsiStarted) return;
+    gsiStarted = true;
+    window.google.accounts.id.initialize({ client_id: clientId, callback: onCredential });
+    window.google.accounts.id.renderButton(document.getElementById("google-button"), { theme: "outline", size: "large", text: "signin_with" });
+  };
+  if (window.google?.accounts?.id) start();
+  else {
+    // The GSI script is async: Google calls this hook when it finishes loading.
+    window.onGoogleLibraryLoad = start;
+    setTimeout(() => { if (!gsiStarted && window.google?.accounts?.id) start(); }, 1500);
+  }
+}
+
+// fetch with the Bearer token. A 401 clears the token and shows the sign-in screen over the page.
+function authFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  return fetch(url, { ...opts, headers }).then(res => {
+    if (res.status === 401) {
+      idToken = null;
+      try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+      showSignIn("Your sign-in expired. Sign in again to continue.");
+    }
+    return res;
+  });
+}
+
+document.getElementById("sign-out-link").addEventListener("click", e => { e.preventDefault(); signOut(); });
+if (!MOCK) { if (idToken) hideSignIn(); else showSignIn(""); }
+if (!MOCK && idToken) { try { const sub = decodeIdToken(idToken)?.sub; if (sub && window.posthog) window.posthog.identify(String(sub)); } catch (e) { /* ignore */ } }
 
 // Footer build label from /healthz. Silent on any failure (demo and mock hosts have no /healthz).
 fetch("/healthz").then(r => r.ok ? r.json() : null).then(h => {
@@ -133,7 +226,7 @@ async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role
     await new Promise(r => setTimeout(r, 150));
     data = mockResponse(model, messages);
   } else {
-    const res = await fetch(API_URL, {
+    const res = await authFetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildRequestBody(model, messages, opts)),
@@ -143,6 +236,7 @@ async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role
     } catch {
       throw new Error(`The server sent an unreadable reply (status ${res.status}). Check that it is running.`);
     }
+    if (res.status === 401) throw new Error("Your sign-in expired. Sign in again, then retry.");
     if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
   }
   console.log(formatUsage(model, data.usage));
@@ -175,7 +269,10 @@ function saveLog() {
 }
 
 async function startSession() {
-  session.raName = DOM.raNameInput.value.trim() || "You";
+  // Signed in: the first name from the Google token (cleaned). Otherwise the typed name, or "RA".
+  // The saved record still says "RA" (buildLiveRecord scrubs this name).
+  const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
+  session.raName = signedInName !== "RA" ? signedInName : (DOM.raNameInput.value.trim() || "RA");
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
@@ -209,7 +306,7 @@ async function startSession() {
 
   try {
     showLoading();
-    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
+    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles, session.raName) }]);
     hideLoading();
     const alexText = cleanResponse(alexRaw);
     console.log("[Alex raw]", alexRaw);
@@ -291,7 +388,7 @@ async function send() {
     // One RA message, one or two resident replies in order. The second sees the first.
     const replies = [];
     for (const speaker of speakers) {
-      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
+      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName) }]);
       const cleanText = cleanResponse(raw);
       console.log("[Response raw]", raw);
       console.log("[Response clean]", cleanText);
@@ -355,7 +452,7 @@ function saveLive(results) {
     if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
     live.saving = true;
     const body = JSON.stringify(liveRecord(results, false));
-    fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
+    authFetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
       .then(res => { live.saved = res.ok; live.saving = false; if (!res.ok) console.warn("[Save] server refused the transcript:", res.status); })
       .catch(e => { live.saving = false; console.warn("[Save] failed:", e.message); });
   } catch (e) { live.saving = false; /* ignore */ }
@@ -366,8 +463,8 @@ function saveLiveOnLeave() {
   try {
     if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
     live.saved = true;
-    const blob = new Blob([JSON.stringify(liveRecord([], true))], { type: "application/json" });
-    navigator.sendBeacon("/api/transcript", blob);
+    // sendBeacon cannot set an Authorization header, so use fetch with keepalive.
+    fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json", ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) }, body: JSON.stringify(liveRecord([], true)), keepalive: true }).catch(() => {});
   } catch (e) { /* ignore */ }
 }
 window.addEventListener("pagehide", saveLiveOnLeave);

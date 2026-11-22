@@ -254,7 +254,7 @@ export function updateOpenness(state, tags, difficulty) {
 }
 
 // openness: 0..3 for the speaker. Defaults to the difficulty's starting level.
-export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness) {
+export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness, raName = "RA") {
   const speakerKey = speaker.toLowerCase();
   const p = profile[speakerKey];
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
@@ -272,7 +272,7 @@ ${OPENNESS_MARKER} ${level} of ${OPENNESS_MAX}: you are ${OPENNESS_BANDS[level]}
 RULES:
 - Say 1 to 3 short sentences, in a spoken style, the way a college student would talk.
 - No lists.
-- Address the RA directly.
+- Address ${raName === "RA" ? "the RA" : raName} directly.
 - Do NOT use em dashes. Use periods or commas only.
 - Do NOT prefix with "${p.name}:".`;
 }
@@ -364,4 +364,52 @@ export function formatBuildLabel(health) {
   const c = health && typeof health.commit === "string" ? health.commit.trim() : "";
   if (!/^[0-9a-f]{4,40}$/i.test(c)) return "";
   return `Build ${c.slice(0, 7)}`;
+}
+
+// Pure. Reads the payload of a Google ID token. The browser only uses it for display and expiry;
+// the server is the one that verifies the token. Returns null when it cannot be read.
+export function decodeIdToken(token) {
+  try {
+    const part = String(token || "").split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+    const payload = JSON.parse(new TextDecoder().decode(bytes));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch { return null; }
+}
+
+// Pure. True when the token reads and has not expired (30 second margin).
+export function isTokenValid(token, nowMs) {
+  const p = decodeIdToken(token);
+  return !!(p && typeof p.exp === "number" && p.exp * 1000 > nowMs + 30000);
+}
+
+// Pure. "local" for localhost and 127.0.0.1, "production" otherwise.
+export function getEnvName(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" ? "local" : "production";
+}
+
+// Pure. Cleans a name from a Google profile before it goes into a prompt: letters, spaces, hyphens and
+// apostrophes only, at most 30 characters. Anything else is dropped, so a profile name cannot carry instructions.
+// Returns "" when nothing usable is left.
+export function cleanFacilitatorName(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.normalize("NFC")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{M} '-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30)
+    .trim();
+}
+
+// Pure. The name residents and the chat use for the facilitator: the cleaned given_name of a valid
+// signed-in token, else "RA". Too short, or the same as a resident, also gives "RA".
+export function facilitatorName(token, nowMs) {
+  if (!token || !isTokenValid(token, nowMs)) return "RA";
+  const n = cleanFacilitatorName(decodeIdToken(token)?.given_name);
+  if (n.length < 2 || /^(alex|jordan|ra|you)$/i.test(n)) return "RA";
+  return n;
 }

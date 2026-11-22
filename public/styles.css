@@ -620,7 +620,8 @@ body {
 
 @media (max-width: 760px) {
   .chat-view { flex-direction: column; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); }
+  /* Stacked layout: a sticky 100vh sidebar would sit over the chat and its buttons. */
+  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); position: static; height: auto; }
   .resident-cards { flex-direction: row; overflow-x: auto; }
   .resident-card { min-width: 260px; }
   .debrief-view { padding: var(--space-md); }
@@ -650,3 +651,18 @@ body {
   color: var(--muted);
 }
 .build-footer[hidden] { display: none; }
+
+/* Sign in */
+.signin-view {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--cream, #faf6ee);
+}
+.signin-view[hidden] { display: none; }
+.signin-view #google-button { display: flex; justify-content: center; margin-top: var(--space-md, 16px); }
+.signin-message { text-align: center; margin-top: var(--space-md, 16px); font-size: 0.9rem; }
+/* In normal page flow at the bottom, so it can never sit over the session controls. */
+.user-bar { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; padding: var(--space-sm) var(--space-md) 0; font-size: 12px; color: var(--muted); }
+.user-bar a { color: inherit; padding: 6px 4px; }
+.user-bar[hidden] { display: none; }
+.setup-notice { font-size: 0.85rem; margin: 0; }
