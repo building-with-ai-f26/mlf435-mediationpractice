@@ -8,6 +8,7 @@ import {
   parseArgs, transcriptPath, INDEX_HEADER, indexLine, assertNoSecret, safeWrite, costOf,
   newLedger, addToLedger, summarizeLedger, runOne, dryCall, BudgetError,
 } from "../tools/simulate.mjs";
+import { RUBRIC_VERSION } from "../public/rubric.js";
 import { buildReport, personaOrder, formatReport, loadRecords, classifyChanges, missRates } from "../tools/report.mjs";
 
 // No test may reach the network.
@@ -103,7 +104,7 @@ test("dry session: full record, persona turn limit wins, no secrets, no network"
   assert.equal(rec.transcript.length, 2 + 3 * 2);
   assert.deepEqual(rec.transcript.map(t => t.sender).slice(0, 2), ["Alex", "Jordan"]);
   assert.ok(rec.transcript.every(t => !Number.isNaN(Date.parse(t.at))));
-  assert.equal(rec.rubricVersion, 1);
+  assert.equal(rec.rubricVersion, RUBRIC_VERSION);
   assert.equal(rec.graders.length, 3);
   assert.equal(rec.combined.length, 15);
   assert.equal(rec.result.total, 15);
