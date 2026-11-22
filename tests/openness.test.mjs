@@ -4,6 +4,8 @@ import { updateOpenness, startingOpenness, parseTags, buildTaggerPrompt } from "
 
 const NONE = { addresses: "none", reflective_listening: false, validates_feeling: false, open_question: false, invites_to_share: false, ground_rules: false, proposes_solution: false, takes_side: false, lectures: false };
 const tag = o => ({ ...NONE, ...o });
+// parseTags also returns the resolution fields, all false when the reply has none.
+const RES = { proposal_on_table: false, plan_has_specifics: false, meets_needs: { alex: false, jordan: false } };
 const st = (alex, jordan, progress = { alex: 0, jordan: 0 }) => ({ alex, jordan, progress });
 const lv = s => [s.alex, s.jordan];
 
@@ -100,8 +102,8 @@ test("updateOpenness does not mutate its input", () => {
 
 test("parseTags accepts plain JSON and JSON inside a code fence", () => {
   const good = JSON.stringify(tag({ addresses: "both", open_question: true }));
-  assert.deepEqual(parseTags(good), tag({ addresses: "both", open_question: true }));
-  assert.deepEqual(parseTags("```json\n" + good + "\n```"), tag({ addresses: "both", open_question: true }));
+  assert.deepEqual(parseTags(good), { ...tag({ addresses: "both", open_question: true }), ...RES });
+  assert.deepEqual(parseTags("```json\n" + good + "\n```"), { ...tag({ addresses: "both", open_question: true }), ...RES });
 });
 
 test("tagger prompt contains the RA message and the recent conversation", () => {

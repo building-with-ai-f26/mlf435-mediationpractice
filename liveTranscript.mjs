@@ -7,7 +7,7 @@ export const MAX_TRANSCRIPT_BYTES = 200 * 1024;
 export const INDEX_HEADER = "date,file,scenario,difficulty,ra_turns,partial,met,score_pct,deepseek_met,claude_met,gemini_met";
 
 // Only these top-level fields are kept. Anything else the browser sends is dropped.
-const KEEP = ["schemaVersion", "createdAt", "scenario", "scenario_id", "difficulty", "partial", "models", "rubricVersion", "openness", "routing", "transcript", "graders", "combined", "result", "usage"];
+const KEEP = ["schemaVersion", "createdAt", "scenario", "scenario_id", "difficulty", "partial", "models", "rubricVersion", "resolved", "resolvedTurn", "openness", "routing", "transcript", "graders", "combined", "result", "usage"];
 
 // Neon passwords (npg_...) and postgres://user:password@ strings must never be saved.
 const DB_SECRET = /npg_[A-Za-z0-9]{12,}|postgres(ql)?:\/\/[^:/ ]+:[^@ ]{12,}@/;
@@ -44,6 +44,9 @@ export function validateTranscript(rawText, { key, gitCommit = "unknown" } = {})
   if (input.scenario.length > 100 || input.difficulty.length > 100) return { status: 400, error: "scenario or difficulty is too long" };
   const record = {};
   for (const k of KEEP) if (input[k] !== undefined) record[k] = input[k];
+  // Type-checked: the browser sets these, so keep only a real boolean and a small whole number.
+  record.resolved = input.resolved === true;
+  record.resolvedTurn = Number.isInteger(input.resolvedTurn) && input.resolvedTurn >= 1 && input.resolvedTurn <= 100 ? input.resolvedTurn : null;
   record.scenario_id = typeof input.scenario_id === "string" && /^[a-z0-9-]{1,64}$/.test(input.scenario_id) ? input.scenario_id : DEFAULT_SCENARIO_ID;
   record.schemaVersion = 1;
   record.source = "live";

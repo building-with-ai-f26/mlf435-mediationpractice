@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -194,6 +194,17 @@ function sysEl(text) {
   return div;
 }
 
+// "You reached a plan" notice with a button to end and see feedback. Shown once per session.
+function planNoticeEl() {
+  const div = sysEl("You reached a plan. Both residents agreed to what, when and a check-in.");
+  const btn = document.createElement("button");
+  btn.className = "btn btn-small";
+  btn.textContent = "End and see feedback";
+  btn.addEventListener("click", () => end());
+  div.appendChild(btn);
+  return div;
+}
+
 function showLoading() {
   const el = document.getElementById("loading-indicator");
   if (el) el.classList.remove("hidden");
@@ -280,6 +291,8 @@ async function startSession() {
   session.lastSpeaker = "Jordan";
   session.turnCount = 0;
   session.agreementNoticeShown = false;
+  session.resolved = false;
+  session.resolvedTurn = null;
   session.openness = startingOpenness(session.difficulty);
   live = newLiveLog();
   live.opennessStart = { alex: session.openness.alex, jordan: session.openness.jordan };
@@ -379,16 +392,20 @@ async function send() {
     // Tag the RA message, then update openness. An unreadable or failed tagger reply changes nothing.
     let tags = null;
     try {
-      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS, "tagger"));
+      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text, session.profiles) }], TAGGER_OPTS, "tagger"));
     } catch (e) {
       console.warn("[Tagger] failed, openness unchanged:", e.message);
     }
     const openness = updateOpenness(session.openness, tags, session.difficulty);
     console.log("[Tagger]", tags, "openness", openness);
     // One RA message, one or two resident replies in order. The second sees the first.
+    // standing: for how many of this resident's turns a plan that keeps their must-haves has been on the table.
+    const tagList = [...live.turns.map(t => t.tags), tags];
     const replies = [];
     for (const speaker of speakers) {
-      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName) }]);
+      const thread = [...session.turnHistory, raEntry, ...replies];
+      const standing = proposalStanding(thread, tagList)[speaker.toLowerCase()];
+      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, thread, speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName, standing) }]);
       const cleanText = cleanResponse(raw);
       console.log("[Response raw]", raw);
       console.log("[Response clean]", cleanText);
@@ -405,8 +422,14 @@ async function send() {
     });
     commitReplies(session, raEntry, replies);
     session.openness = openness;
-    if (shouldShowAgreementNotice(session)) {
-      DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
+    // Resolved only when both residents accepted a plan with specifics and their openness was earned (see resolutionState).
+    const state = resolutionState(session.turnHistory, live.turns.map(t => t.tags), session.openness);
+    live.turns[live.turns.length - 1].resolution = state;
+    if (state === "resolved" && !session.resolved) {
+      session.resolved = true;
+      session.resolvedTurn = session.turnCount;
+      track("plan_resolved", { turn: session.turnCount });
+      DOM.chatLog.appendChild(planNoticeEl());
     }
     updateTurnCounter();
     if (isTurnCapReached(session.turnCount, MAX_TURNS)) {

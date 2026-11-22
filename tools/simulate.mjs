@@ -6,7 +6,7 @@ import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
 import { MAIN_MODEL, GRADER_MODELS, GRADER_OPTS, TOKENS_RESIDENT, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
-import { getResponder, commitTurn, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
+import { getResponder, commitTurn, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, proposalStanding, resolutionState, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined } from "../public/rubric.js";
 import { mockResponse } from "../public/mock.js";
 
@@ -173,18 +173,23 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     // Tagger: an unreadable or failed reply leaves openness unchanged, same as the app.
     let tags = null;
     try {
-      const t = await track("tagger", TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS);
+      const t = await track("tagger", TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text, profiles) }], TAGGER_OPTS);
       tags = parseTags(t.content);
     } catch (e) {
       if (e instanceof BudgetError) throw e;
     }
     const before = { alex: session.openness.alex, jordan: session.openness.jordan };
     const openness = updateOpenness(session.openness, tags, difficulty);
-    const reply = await resident(mediationPrompt(scenario, difficulty, [...session.turnHistory, raEntry], speaker, k, profiles, openness[speaker.toLowerCase()]));
+    const tagList = [...turnLog.map(t => t.tags), tags];
+    const standing = proposalStanding([...session.turnHistory, raEntry], tagList)[speaker.toLowerCase()];
+    const reply = await resident(mediationPrompt(scenario, difficulty, [...session.turnHistory, raEntry], speaker, k, profiles, openness[speaker.toLowerCase()], "RA", standing));
     session.openness = openness;
-    turnLog.push({ turn: k, speaker, tags, openness_before: before, openness_after: { alex: openness.alex, jordan: openness.jordan } });
     stamps.push(deps.now().toISOString(), deps.now().toISOString());
     commitTurn(session, raEntry, speaker, reply);
+    // Same resolution rule as the app. The first turn it reads "resolved" is the turn the plan was reached.
+    const resolution = resolutionState(session.turnHistory, [...tagList], session.openness);
+    turnLog.push({ turn: k, speaker, tags, openness_before: before, openness_after: { alex: openness.alex, jordan: openness.jordan }, resolution });
+    if (resolution === "resolved" && !session.resolved) { session.resolved = true; session.resolvedTurn = k; }
   }
 
   // Graders, in parallel, exactly as the app does.
@@ -216,6 +221,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     persona: { id: persona.id, category: persona.category, expected: persona.expected, maxTurns },
     models: { resident: MAIN_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
     rubricVersion: RUBRIC_VERSION,
+    resolved: !!session.resolved, resolvedTurn: session.resolvedTurn ?? null,
     openness: { start: openStart, turns: turnLog },
     transcript: session.turnHistory.map((h, i) => ({ sender: h.sender, text: h.text, at: stamps[i] })),
     graders, combined, result, usage, cost,
