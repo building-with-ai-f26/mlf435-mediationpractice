@@ -37,3 +37,6 @@ out/
 
 # Live session transcripts (may contain what real people typed). Share only via tools/export-live.mjs into transcripts/shared/.
 transcripts/live/
+
+# Database backups (real session transcripts). Never commit.
+backups/
