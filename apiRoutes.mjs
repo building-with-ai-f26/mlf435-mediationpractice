@@ -8,10 +8,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIST_COLUMNS = "id, scenario_id, topic, difficulty, started_at, ended_at, turns, met, models, app_version, created_at";
 const err = (status, message, headers) => ({ status, body: { error: { message } }, headers });
 const ok = (body, status = 200) => ({ status, body });
+// Error name and message only, with any connection string removed. Used for the [save-failed] log line.
+const safeError = e => `${String(e && e.name || "Error")}: ${String(e && e.message || e).replace(/postgres(?:ql)?:\/\/\S*/gi, "[redacted]")}`;
 
 export function createApiRoutes({
   verifyUser, query = null, dailyCap = null, liveAiEnabled = false, key = "", gitCommit = "unknown", liveDir = "transcripts/live",
-  userCallsPerHour = 150, userSessionsPerDay = 10, saveFile = saveTranscript,
+  userCallsPerHour = 150, userSessionsPerDay = 10, saveFile = saveTranscript, log = console.error,
 }) {
   const userChat = createRateLimiter({ max: userCallsPerHour, windowMs: 60 * 60 * 1000 });
 
@@ -44,7 +46,15 @@ export function createApiRoutes({
     const { record, error, status } = validateTranscript(text, { key, gitCommit });
     if (error) return err(status, error);
     if (!query) return ok({ ok: true, file: saveFile(record, liveDir) });
+    try {
+      return await saveToDatabase(user, record);
+    } catch (e) {
+      log("[save-failed]", safeError(e));
+      return err(500, "Could not save the session.");
+    }
+  }
 
+  async function saveToDatabase(user, record) {
     const rows = await query("select count(*)::int as n from sessions where user_id = $1 and created_at > now() - interval '1 day'", [user.id]);
     if ((rows[0]?.n ?? 0) >= userSessionsPerDay) return err(429, `You can save ${userSessionsPerDay} sessions per day. Please try again tomorrow.`);
     const lines = record.transcript.map(l => (l.role === "ra" ? { ...l, sender: "RA" } : l)); // the RA is always stored as "RA"

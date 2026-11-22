@@ -7,7 +7,7 @@ import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.
 import { execSync } from "child_process";
 import { validateChatBody } from "./chatBody.mjs";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
-import { readSetting, createVerifier } from "./auth.mjs";
+import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -54,8 +54,13 @@ if (!OPENROUTER_API_KEY) {
 
 // DATABASE_URL and GOOGLE_CLIENT_ID: environment first, then .env. Never logged.
 // The .env.example placeholder counts as "not set", so a fresh copy of it keeps the file fallback.
-const rawDatabaseUrl = readSetting("DATABASE_URL", process.env, envPath);
-const DATABASE_URL = rawDatabaseUrl.includes("USER:PASSWORD@HOST") ? "" : rawDatabaseUrl;
+let DATABASE_URL = "";
+try {
+  DATABASE_URL = normalizeDatabaseUrl(readSetting("DATABASE_URL", process.env, envPath));
+} catch (e) {
+  console.error("[config]", e.message);
+  process.exit(1);
+}
 const GOOGLE_CLIENT_ID = readSetting("GOOGLE_CLIENT_ID", process.env, envPath);
 const verifyUser = createVerifier({ clientId: GOOGLE_CLIENT_ID, allowedDomain: (process.env.ALLOWED_GOOGLE_DOMAIN || "").trim() });
 let sqlPromise = null;
@@ -66,7 +71,9 @@ const query = DATABASE_URL
       try {
         return await (await sqlPromise).query(text, params);
       } catch (e) {
-        throw new Error(String(e && e.message || e).split(DATABASE_URL).join("[redacted]"));
+        const safe = new Error(String(e && e.message || e).split(DATABASE_URL).join("[redacted]"));
+        safe.name = String(e && e.name || "Error"); // keep the name (e.g. NeonDbError) for the log
+        throw safe;
       }
     }
   : null;
