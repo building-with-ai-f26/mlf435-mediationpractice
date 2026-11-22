@@ -19,7 +19,7 @@ All commands run from the repository root with Node 20 or newer. There is no `pa
   ```
 - **Start the server:** `LIVE_AI_ENABLED=true node server.mjs` (or `npm start`), then open `http://localhost:3000`. Without `LIVE_AI_ENABLED=true`, `/api/chat` returns 503 and only `?mock=1` works. The key is read from the `OPENROUTER_API_KEY` environment variable first, then from `.env` in the current directory; the server exits with an error if neither has it. It listens on `127.0.0.1`, or on `0.0.0.0` when `NODE_ENV=production`. See "Server environment variables" below.
 - **Run offline (no API calls):** open `http://localhost:3000/?mock=1`. The browser uses canned replies and grades. The server still has to start, so `.env` needs a key line even in mock mode.
-- **Run tests:** `node --test tests/*.test.mjs` (or `npm test`). Deterministic and offline: 195 tests in 20 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
+- **Run tests:** `node --test tests/*.test.mjs` (or `npm test`). Deterministic and offline: 199 tests in 21 files. The live-transcript test starts `server.mjs` on a random local port in a temporary folder.
 - **Probe grader models:** `node tools/probe-models.mjs [--dry]`. Sends one fixed grading prompt to the three grader models with two settings each (six calls, billed to your key). `--dry` prints the planned requests and makes no network calls. The prompt is out of date; see section 11.
 - **Simulate sessions:** `node tools/simulate.mjs [flags]`. Runs whole sessions (residents, simulated RA, tagger, three graders) directly against OpenRouter, not the local server. Live runs cost money and save one transcript per session under `transcripts/`. Flags, all optional:
 
@@ -55,7 +55,7 @@ All except the key are read from the process environment only (not from `.env`).
 | `RATE_LIMIT_WINDOW_MINUTES` | `10` | Length of that window. |
 | `DAILY_CALL_CAP` | `500` | Global count of valid `/api/chat` calls per UTC day. Once reached: 503. In memory, reset on restart. |
 
-`GET /healthz` returns `200 {"ok":true}` and nothing else. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. There is no Content-Security-Policy yet because the PostHog snippet is inline.
+`GET /healthz` returns `200 {"ok":true,"commit":"<sha>"}` and nothing else. The commit is `RENDER_GIT_COMMIT` on Render, else the local short git hash, else `unknown`. When `IS_PULL_REQUEST` is `true` (a Render preview) the server forces live AI off and `/api/transcript` returns 503 without writing. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. There is no Content-Security-Policy yet because the PostHog snippet is inline.
 
 ## 3. Architecture
 - `server.mjs` — Node `http` server on `127.0.0.1`. Serves `public/` (GET and HEAD only) and forwards `POST /api/chat` to OpenRouter, adding the key from `.env`. Rejects models not in `ALLOWED_MODELS`, bodies over 64 KB, and requests with an unexpected Origin or Host.
@@ -72,12 +72,13 @@ All except the key are read from the process environment only (not from `.env`).
 - `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
 - `public/liveRecord.js` — Pure: builds the record `app.js` sends at the end of a live session, replaces the RA name with "RA", and counts token usage per role.
 - `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
-- `tests/` — 20 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
+- `tests/` — 21 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
 - `tools/` — `pull-posthog.mjs` (aggregate analytics to `docs/analytics.json`), `export-live.mjs` (redacted copies of live sessions), `simulate.mjs` (simulated sessions), `probe-models.mjs` (grader probe), `report.mjs` (summary of saved runs), `personas.mjs` (10 simulated RA personas, data only), `prices.json` (USD per million tokens; every entry is still `null`).
 - `transcripts/` — Output of `tools/simulate.mjs`: `YYYY-MM-DD/HHMMSS-<scenario>-<difficulty>-<persona>.json`, plus `index.csv`. Read by `tools/report.mjs`.
 - `transcripts/live/` — Live sessions saved by the server (git-ignored): `YYYY-MM-DD/HHMMSS-<topic>-<difficulty>.json` plus `index.csv`. `tools/report.mjs` skips them (`source: "live"`).
 - `transcripts/shared/` — Redacted copies made by `tools/export-live.mjs`. The only transcripts that may be committed.
 - `scripts/sync-demo.sh` — Rebuilds `docs/demo/` from `public/`.
+- `scripts/smoke.mjs` — `node scripts/smoke.mjs <base URL> [--commit <sha>]`. Post-deploy checks, see Shipping.
 - `.env.example` — Placeholder only. Copy it to `.env`. `.env` is git-ignored and must never be committed.
 - `.env` — `OPENROUTER_API_KEY=sk-or-v1-...` (NEVER commit)
 - `docs/index.html` — Product Page / Living PRD (GitHub Pages from `/docs`). `docs/demo/` is the generated copy of the app for the hosted mock demo.
@@ -165,7 +166,63 @@ Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to 
 13. **Local only.** The server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
 
 ## Shipping
-Filled in after the first deploy (step B3-3)
+Hosting is Render. CI is `.github/workflows/ci.yml`; its one job is named `test` (checkout, `npm ci`, `node --check server.mjs`, `npm test`, `npm audit --audit-level=high`, secret scan).
+
+### Flow for every change
+1. **Branch:** `git switch -c <name>` from an up to date `main`. Never commit to `main`.
+2. **Commit:** small commits. Run `npm test` first. Never stage `.env`.
+3. **Pull request:** `git push -u origin <name>`, then `gh pr create`. Do not push to `main`.
+4. **CI:** the check named `test` must pass. Watch it with `gh pr checks --watch`.
+5. **Render preview:** Pull Request Previews are Automatic, so Render builds a preview URL for the PR. Open it and run `node scripts/smoke.mjs <preview URL>`. A preview is safe by design: Render sets `IS_PULL_REQUEST=true`, and the server then forces live AI off (`/api/chat` returns 503) and refuses `/api/transcript` (nothing is written), whatever the other variables say. Test the real AI only on the production service.
+6. **Merge:** a human merges the PR on GitHub after `test` is green. Agents do not merge.
+7. **Deploy:** with Auto-Deploy set to After CI Checks Pass, Render deploys `main` only once `test` passes on that commit. A red check means no deploy.
+8. **Verify the live site:** `node scripts/smoke.mjs https://<service>.onrender.com --commit $(git rev-parse HEAD)`. It checks `/healthz` (200, and the commit matches), that `/` serves the page, that `/api/chat` without a valid Origin is refused, that a bad Origin gets 403, and the three security headers. Then open the site and run one real session. The free instance sleeps when idle, so the first request can take up to a minute.
+9. **Roll back:** see below.
+
+### Render settings
+| Setting | Value |
+|---|---|
+| Service type | Web Service, from this GitHub repo, branch `main` |
+| Runtime | Node |
+| Build command | `npm ci` |
+| Start command | `npm start` |
+| Instance type | Free |
+| Health check path | `/healthz` |
+| Auto-Deploy | After CI Checks Pass |
+| Pull Request Previews | Automatic |
+
+### Environment variables on Render
+Set these in the service's Environment tab. Never commit values.
+
+| Variable | Value | What it is for |
+|---|---|---|
+| `NODE_ENV` | `production` | Binds `0.0.0.0` (Render needs this) and trusts the first `x-forwarded-for` entry as the client IP. |
+| `OPENROUTER_API_KEY` | your key, secret | Required. The server exits without it. Used only server side. |
+| `LIVE_AI_ENABLED` | `true` on production | Turns on `/api/chat`. Off by default. Ignored in previews. |
+| `PUBLIC_ORIGIN` | the live URL, set after the first deploy | Extra origin and host the server accepts. Without it the live site rejects its own browser requests with 403. |
+| `RATE_LIMIT_MAX` | `60` (default) | Requests per client IP per window on `/api/chat` and `/api/transcript`. |
+| `RATE_LIMIT_WINDOW_MINUTES` | `10` (default) | Length of that window. |
+| `DAILY_CALL_CAP` | `500` (default) | Global `/api/chat` calls per UTC day, then 503. This is the spending guard. Raising it needs approval. |
+| `PORT` | set by Render | Listen port. Do not set it yourself. |
+| `RENDER_GIT_COMMIT` | set by Render | Full SHA of the deployed commit. Shown by `/healthz` as `commit`. |
+| `IS_PULL_REQUEST` | set by Render | The string `true` on pull request previews, `false` otherwise. Triggers preview safety. |
+
+`POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` are only for `tools/pull-posthog.mjs` on the builder's machine. Do not set them on Render.
+
+Transcripts are written to the instance's disk, which is wiped on every deploy and restart on the free plan. Treat saved live sessions on Render as temporary.
+
+### Setting PUBLIC_ORIGIN after the first deploy
+1. Create the service with every variable above except `PUBLIC_ORIGIN`. Wait for the first deploy to go live.
+2. Copy the URL Render shows, for example `https://<service>.onrender.com` (scheme and host only, no trailing slash or path).
+3. Add `PUBLIC_ORIGIN` with that value in the Environment tab and save. Render redeploys.
+4. Run `node scripts/smoke.mjs <that URL>` and open the site. If you later add a custom domain, set `PUBLIC_ORIGIN` to both, separated by a comma.
+
+### Roll back
+1. In the Render dashboard open the service, then Events (or Deploys), and find the last good deploy.
+2. Click Rollback on that deploy and confirm. Render redeploys that build without a new CI run. Check that `/healthz` shows the old commit.
+3. Auto-Deploy is turned off by a rollback, so a later merge will not deploy by surprise. Fix forward on a new branch, or revert on `main` with a pull request (`git revert <sha>`, never a force push), then turn Auto-Deploy back on.
+4. If the cause is a bad environment variable, fix it in the Environment tab instead. If spend is the problem, set `LIVE_AI_ENABLED=false` first: it stops all AI calls at once.
+5. Run `node scripts/smoke.mjs <URL> --commit <good sha>` to confirm.
 
 ## Ask me first
 Stop and ask me before doing any of these:

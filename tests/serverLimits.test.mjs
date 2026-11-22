@@ -71,7 +71,9 @@ test("healthz returns 200 {ok:true} and security headers, even with a foreign Ho
   try {
     const res = await fetch(s.base + "/healthz");
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true });
+    const hb = await res.json();
+    assert.equal(hb.ok, true);
+    assert.equal(typeof hb.commit, "string");
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
     assert.equal(res.headers.get("x-frame-options"), "DENY");
     assert.equal(res.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
