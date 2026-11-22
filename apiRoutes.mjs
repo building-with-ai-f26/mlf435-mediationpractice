@@ -8,10 +8,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIST_COLUMNS = "id, scenario_id, topic, difficulty, started_at, ended_at, turns, met, models, app_version, created_at";
 const err = (status, message, headers) => ({ status, body: { error: { message } }, headers });
 const ok = (body, status = 200) => ({ status, body });
+// Error name and message only, with any connection string removed. Used for the [save-failed] log line.
+const safeError = e => [String(e && e.name || "Error"), String(e && e.message || e).replace(/postgres(?:ql)?:\/\/\S*/gi, "[redacted]")];
 
 export function createApiRoutes({
   verifyUser, query = null, dailyCap = null, liveAiEnabled = false, key = "", gitCommit = "unknown", liveDir = "transcripts/live",
-  userCallsPerHour = 150, userSessionsPerDay = 10, saveFile = saveTranscript,
+  userCallsPerHour = 150, userSessionsPerDay = 10, saveFile = saveTranscript, log = console.error,
 }) {
   const userChat = createRateLimiter({ max: userCallsPerHour, windowMs: 60 * 60 * 1000 });
 
@@ -34,17 +36,35 @@ export function createApiRoutes({
     return null;
   }
 
+  // Every attempt logs one line: [save-ok] or [save-failed], with an error name and message only.
+  // Never the connection string, token, user id or transcript text. Refusals use fixed messages.
+  const failed = (name, message, response) => { log("[save-failed]", `${name}: ${message}`); return response; };
+
   async function saveSession(headers, text) {
     // The database needs a user, so a login is also required whenever the database is used.
     let user = null;
     if (liveAiEnabled || query) {
       user = await authenticate(headers);
-      if (!user) return needLogin;
+      if (!user) return failed("Unauthorized", "no valid Google sign-in on the request", needLogin);
     }
     const { record, error, status } = validateTranscript(text, { key, gitCommit });
-    if (error) return err(status, error);
-    if (!query) return ok({ ok: true, file: saveFile(record, liveDir) });
+    if (error) return failed("Refused", `${status} ${error}`, err(status, error));
+    try {
+      if (!query) {
+        const file = saveFile(record, liveDir);
+        log("[save-ok]", "file mode");
+        return ok({ ok: true, file });
+      }
+      const r = await saveToDatabase(user, record);
+      if (r.status === 200) log("[save-ok]", "database mode");
+      else failed("Refused", `${r.status} ${r.body.error.message}`);
+      return r;
+    } catch (e) {
+      return failed(...safeError(e), err(500, "Could not save the session."));
+    }
+  }
 
+  async function saveToDatabase(user, record) {
     const rows = await query("select count(*)::int as n from sessions where user_id = $1 and created_at > now() - interval '1 day'", [user.id]);
     if ((rows[0]?.n ?? 0) >= userSessionsPerDay) return err(429, `You can save ${userSessionsPerDay} sessions per day. Please try again tomorrow.`);
     const lines = record.transcript.map(l => (l.role === "ra" ? { ...l, sender: "RA" } : l)); // the RA is always stored as "RA"

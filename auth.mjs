@@ -17,6 +17,20 @@ export function readSetting(name, env = process.env, envPath = ".env") {
   return v;
 }
 
+// Cleans a DATABASE_URL value. Returns "" when it is empty or the .env.example placeholder (files are used then).
+// Hosts and shells often leave extra text around the URL (quotes, a "psql " prefix, "DATABASE_URL="), which neon() rejects
+// as "not a valid URL" only when the first query runs. So pull out the postgres:// URL itself.
+// Throws a clear error, never containing the value, if something is set but holds no usable URL.
+export function normalizeDatabaseUrl(raw) {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!v || v.includes("USER:PASSWORD@HOST")) return "";
+  const m = /postgres(?:ql)?:\/\/[^\s'"]+/i.exec(v);
+  let ok = false;
+  try { ok = !!m && !!new URL(m[0]).hostname; } catch { /* not a URL */ }
+  if (!ok) throw new Error("DATABASE_URL is set but does not contain a postgres:// or postgresql:// URL. Paste only the connection string.");
+  return m[0];
+}
+
 const b64urlJson = s => JSON.parse(Buffer.from(s, "base64url").toString("utf-8"));
 
 // Returns verifyUser(token) -> { id, name } or null. fetchImpl and now are replaceable for tests.
