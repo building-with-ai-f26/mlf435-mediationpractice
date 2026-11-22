@@ -154,7 +154,6 @@ export function createSession() {
   return {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-    agreementNoticeShown: false,
     resolved: false, resolvedTurn: null, // set once both residents accept a plan with specifics (see resolutionState)
     openness: startingOpenness("medium"),
   };

@@ -432,14 +432,6 @@ export function formatUsage(model, usage) {
   return `[tokens] ${model}: prompt=${p} completion=${c} total=${t}`;
 }
 
-// True the first time both residents agree in a session, false afterwards.
-// Marks the session so the notice is not repeated.
-export function shouldShowAgreementNotice(session) {
-  if (session.agreementNoticeShown || !bothAgreed(session.turnHistory)) return false;
-  session.agreementNoticeShown = true;
-  return true;
-}
-
 // Mock mode is on with ?mock=1, and always on for GitHub Pages (hostname ends in github.io),
 // where there is no server to proxy API calls.
 export function isMockMode(hostname, search) {

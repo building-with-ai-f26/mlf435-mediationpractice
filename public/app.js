@@ -290,7 +290,6 @@ async function startSession() {
   session.active = true;
   session.lastSpeaker = "Jordan";
   session.turnCount = 0;
-  session.agreementNoticeShown = false;
   session.resolved = false;
   session.resolvedTurn = null;
   session.openness = startingOpenness(session.difficulty);

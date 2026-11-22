@@ -23,7 +23,6 @@ test("createSession returns a fresh object with the starting fields each time", 
   assert.deepEqual(a, {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-    agreementNoticeShown: false,
     resolved: false, resolvedTurn: null,
     openness: { alex: 0, jordan: 0, progress: { alex: 0, jordan: 0 } },
   });
