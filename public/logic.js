@@ -254,7 +254,7 @@ export function updateOpenness(state, tags, difficulty) {
 }
 
 // openness: 0..3 for the speaker. Defaults to the difficulty's starting level.
-export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness) {
+export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness, raName = "RA") {
   const speakerKey = speaker.toLowerCase();
   const p = profile[speakerKey];
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
@@ -272,7 +272,7 @@ ${OPENNESS_MARKER} ${level} of ${OPENNESS_MAX}: you are ${OPENNESS_BANDS[level]}
 RULES:
 - Say 1 to 3 short sentences, in a spoken style, the way a college student would talk.
 - No lists.
-- Address the RA directly.
+- Address ${raName === "RA" ? "the RA" : raName} directly.
 - Do NOT use em dashes. Use periods or commas only.
 - Do NOT prefix with "${p.name}:".`;
 }
@@ -389,4 +389,27 @@ export function isTokenValid(token, nowMs) {
 export function getEnvName(hostname) {
   const h = String(hostname || "").toLowerCase();
   return h === "localhost" || h === "127.0.0.1" ? "local" : "production";
+}
+
+// Pure. Cleans a name from a Google profile before it goes into a prompt: letters, spaces, hyphens and
+// apostrophes only, at most 30 characters. Anything else is dropped, so a profile name cannot carry instructions.
+// Returns "" when nothing usable is left.
+export function cleanFacilitatorName(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.normalize("NFC")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{M} '-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30)
+    .trim();
+}
+
+// Pure. The name residents and the chat use for the facilitator: the cleaned given_name of a valid
+// signed-in token, else "RA". Too short, or the same as a resident, also gives "RA".
+export function facilitatorName(token, nowMs) {
+  if (!token || !isTokenValid(token, nowMs)) return "RA";
+  const n = cleanFacilitatorName(decodeIdToken(token)?.given_name);
+  if (n.length < 2 || /^(alex|jordan|ra|you)$/i.test(n)) return "RA";
+  return n;
 }

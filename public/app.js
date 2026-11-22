@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -38,7 +38,7 @@ function showSignIn(message) {
 
 function hideSignIn() {
   document.getElementById("signin").hidden = true;
-  const given = decodeIdToken(idToken)?.given_name;
+  const given = cleanFacilitatorName(decodeIdToken(idToken)?.given_name);
   document.getElementById("user-greeting").textContent = given ? `Signed in as ${given}` : "Signed in";
   document.getElementById("user-bar").hidden = false;
 }
@@ -269,7 +269,10 @@ function saveLog() {
 }
 
 async function startSession() {
-  session.raName = DOM.raNameInput.value.trim() || "You";
+  // Signed in: the first name from the Google token (cleaned). Otherwise the typed name, or "RA".
+  // The saved record still says "RA" (buildLiveRecord scrubs this name).
+  const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
+  session.raName = signedInName !== "RA" ? signedInName : (DOM.raNameInput.value.trim() || "RA");
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
@@ -303,7 +306,7 @@ async function startSession() {
 
   try {
     showLoading();
-    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
+    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles, session.raName) }]);
     hideLoading();
     const alexText = cleanResponse(alexRaw);
     console.log("[Alex raw]", alexRaw);
@@ -385,7 +388,7 @@ async function send() {
     // One RA message, one or two resident replies in order. The second sees the first.
     const replies = [];
     for (const speaker of speakers) {
-      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
+      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName) }]);
       const cleanText = cleanResponse(raw);
       console.log("[Response raw]", raw);
       console.log("[Response clean]", cleanText);

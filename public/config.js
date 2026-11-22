@@ -65,7 +65,7 @@ export function getProfiles(topic, difficulty) {
 }
 
 
-export function alexPrompt(topic, difficulty, profile) {
+export function alexPrompt(topic, difficulty, profile, raName = "RA") {
   return `You are Alex. ${profile.alex.meta}. ${profile.alex.trait} Currently ${profile.alex.mood}.
 
 The issue: ${profile.alex.stance}
@@ -75,7 +75,7 @@ RULES:
 - Paragraph 1 must be exactly 2 sentences.
 - Paragraph 2 must be exactly 2 sentences.
 - Paragraph 1: Introduce yourself and state the problem.
-- Paragraph 2: Say how it affects you and ask the RA one question.
+- Paragraph 2: Say how it affects you and ask ${raName === "RA" ? "the RA" : raName} one question.
 - Do NOT use em dashes. Use periods only.
 - Do NOT write more than 4 sentences total.
 - Do NOT write one long paragraph.
