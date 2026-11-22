@@ -23,7 +23,7 @@ test("createSession returns a fresh object with the starting fields each time", 
   assert.deepEqual(a, {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-    agreementNoticeShown: false,
+    resolved: false, resolvedTurn: null,
     openness: { alex: 0, jordan: 0, progress: { alex: 0, jordan: 0 } },
   });
   a.turnHistory.push({ sender: "x", text: "y" });
@@ -42,7 +42,7 @@ test("getProfiles covers every topic and difficulty, and falls back for unknown 
 
 test("tagger uses Haiku with the grader's low-reasoning, temperature 0 settings and a small budget", () => {
   assert.equal(TAGGER_MODEL, "anthropic/claude-haiku-5.5");
-  assert.deepEqual(TAGGER_OPTS, { maxTokens: 150, temperature: 0, reasoning: { enabled: false } });
+  assert.deepEqual(TAGGER_OPTS, { maxTokens: 220, temperature: 0, reasoning: { enabled: false } });
   const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.ok(src.includes(`"${TAGGER_MODEL}"`));
 });

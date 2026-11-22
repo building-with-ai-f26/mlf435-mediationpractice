@@ -134,6 +134,7 @@ function mockTagReply(prompt) {
   const m = prompt.match(/RA message to label:\n"([\s\S]*)"\n\nReply with JSON/);
   const t = m ? m[1] : "";
   const alex = /\balex\b/i.test(t), jordan = /\bjordan\b/i.test(t);
+  const proposal = /\b(what if we|let'?s try|how about|let'?s agree|quiet hours)\b/i.test(t);
   return JSON.stringify({
     addresses: alex && jordan ? "both" : alex ? "alex" : jordan ? "jordan" : "none",
     reflective_listening: /\b(sounds like|i hear|what i'?m hearing|so you)\b/i.test(t),
@@ -144,6 +145,10 @@ function mockTagReply(prompt) {
     proposes_solution: /\b(you should|why don'?t you|let'?s agree|quiet hours at)\b/i.test(t),
     takes_side: /\b(you'?re right|that'?s not fair of)\b/i.test(t),
     lectures: /\b(you need to grow up|you have to learn|should know better)\b/i.test(t),
+    // Mock plans: "what if we ..." or "let's try ..." puts a plan on the table and keeps both must-haves.
+    proposal_on_table: proposal,
+    plan_has_specifics: proposal && /\b(check in|check-in|next (week|friday))\b/i.test(t),
+    meets_needs: { alex: proposal, jordan: proposal },
   });
 }
 

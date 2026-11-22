@@ -16,13 +16,59 @@ export const TOKENS_GRADER = 1500;
 export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
 export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
-export const TOKENS_TAGGER = 150;
+export const TOKENS_TAGGER = 220; // was 150: the tagger now also returns proposal_on_table, meets_needs and plan_has_specifics
 export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
 export const ROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
 export const MAX_TURNS = 10;
+
+// What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
+// Plain data, one entry per topic, so it can move into a scenario file later without changing shape.
+// Every topic has at least one deal that keeps all four must-haves, so a good RA can get to a plan.
+export const NEEDS = {
+  noise: {
+    alex:   { mustHaves: ["Lights out and the room quiet by 10:30pm on weeknights, because of a 7am lab.", "No loud noise or music in the room before 7am."],
+              flexible: ["Weekends can run later.", "Jordan may use headphones or the lounge for loud activities."] },
+    jordan: { mustHaves: ["The study group keeps meeting until 11:30pm on Tuesdays and Thursdays.", "Jordan can talk and move around normally in the room until 10:30pm."],
+              flexible: ["Where the study group meets (the room, the lounge or the library).", "Other nights can wind down earlier."] },
+  },
+  cleaning: {
+    alex:   { mustHaves: ["The kitchen and bathroom are cleaned on a fixed weekly schedule that is written down.", "Dishes are not left in the sink overnight."],
+              flexible: ["Which weekday the deep clean happens.", "The two of them can swap chores some weeks."] },
+    jordan: { mustHaves: ["Jordan's belongings are not moved or rearranged without asking first.", "The cleaning standard is realistic for a student with a heavy week."],
+              flexible: ["Who takes which chore.", "Cleaning can be split into shorter sessions."] },
+  },
+  "guest policy": {
+    alex:   { mustHaves: ["No overnight guests on weeknights, because of early classes.", "Alex gets advance notice before any overnight guest."],
+              flexible: ["How many weekend nights a guest can stay.", "The notice can be a text message."] },
+    jordan: { mustHaves: ["Jordan's partner can still visit and stay over on weekends.", "Jordan does not have to ask permission for daytime visits."],
+              flexible: ["Which weekend nights.", "Where Alex stays when a guest is over, if Alex chooses."] },
+  },
+  hygiene: {
+    alex:   { mustHaves: ["Dirty laundry is kept in a closed hamper and washed at least every two weeks.", "The smell problem is fixed before Alex has visitors."],
+              flexible: ["Which laundry day.", "Using the room's air purifier or an open window."] },
+    jordan: { mustHaves: ["No heavily scented products used in the room, because they cause headaches.", "Jordan is asked politely, not blamed."],
+              flexible: ["Unscented alternatives Alex picks.", "Alex can use scented products outside the room."] },
+  },
+  "shared items": {
+    alex:   { mustHaves: ["Alex's food and chargers are not taken without asking first.", "Anything used up is replaced within a week."],
+              flexible: ["A shared shelf for common items.", "Which items count as shared."] },
+    jordan: { mustHaves: ["There is a clear list of what is shared and what is private.", "Jordan can still borrow small things in an emergency."],
+              flexible: ["How the labels are done.", "How the two split the cost of shared supplies."] },
+  },
+  "religious practice": {
+    alex:   { mustHaves: ["Alex can pray quietly in the room each night without being interrupted.", "Alex's food stays separate from pork, in line with a halal diet."],
+              flexible: ["The exact prayer time can be shared with Jordan ahead of time.", "Which fridge shelf is used."] },
+    jordan: { mustHaves: ["Jordan can keep eating normal foods, including bacon, at home.", "Jordan does not have to explain or justify food choices."],
+              flexible: ["Storing the bacon in a sealed container on its own shelf.", "Cleaning the pans right after cooking."] },
+  },
+};
+
+export function getNeeds(topic) {
+  return NEEDS[topic] || NEEDS.noise;
+}
 
 export function getProfiles(topic, difficulty) {
   const traits = {
@@ -58,9 +104,10 @@ export function getProfiles(topic, difficulty) {
   };
   const t = traits[difficulty] || traits.medium;
   const s = stances[topic] || stances.noise;
+  const n = getNeeds(topic);
   return {
-    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex },
-    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan},
+    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex,   mustHaves: n.alex.mustHaves,   flexible: n.alex.flexible },
+    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan, mustHaves: n.jordan.mustHaves, flexible: n.jordan.flexible },
   };
 }
 
@@ -107,7 +154,7 @@ export function createSession() {
   return {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-    agreementNoticeShown: false,
+    resolved: false, resolvedTurn: null, // set once both residents accept a plan with specifics (see resolutionState)
     openness: startingOpenness("medium"),
   };
 }

@@ -49,6 +49,16 @@ export function classifyChanges(records) {
   return out;
 }
 
+// Per persona: how many sessions ended with a plan both residents accepted (resolved) and the mean turn it happened.
+// Records saved before resolution existed have no `resolved` field and are left out.
+export function resolutionByPersona(records, ids) {
+  return ids.map(id => {
+    const rs = records.filter(r => r.persona.id === id && typeof r.resolved === "boolean");
+    const turns = rs.filter(r => r.resolved && Number.isInteger(r.resolvedTurn)).map(r => r.resolvedTurn);
+    return { persona: id, n: rs.length, resolved: rs.filter(r => r.resolved).length, meanTurn: turns.length ? turns.reduce((a, b) => a + b, 0) / turns.length : null, turns };
+  }).filter(x => x.n > 0);
+}
+
 // Share of sessions where each question was not met in the combined vote, overall and by persona.
 export function missRates(records) {
   return RUBRIC.map(q => {
@@ -103,7 +113,7 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
+  return { total: records.length, ids, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -129,6 +139,10 @@ export function formatReport(rep) {
   for (const [role, c] of Object.entries(rep.cost)) {
     const name = role === "user_session" ? "user session (residents + graders, no ra_sim)" : role;
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
+  }
+  if (rep.resolution?.length) {
+    L.push("", "(h) Plans reached (both residents accepted a plan with specifics), by persona", "persona".padEnd(17) + "resolved".padEnd(10) + "turn(s)");
+    for (const x of rep.resolution) L.push(x.persona.padEnd(17) + `${x.resolved} of ${x.n}`.padEnd(10) + (x.turns.length ? x.turns.join(", ") : "none"));
   }
   return L.join("\n");
 }

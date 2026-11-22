@@ -77,7 +77,7 @@ export function createApiRoutes({
         user.id, record.scenario_id, record.scenario, record.difficulty,
         iso(times.length ? Math.min(...times) : undefined), record.createdAt && Number.isFinite(Date.parse(record.createdAt)) ? record.createdAt : null,
         lines.filter(l => l.role === "ra").length, JSON.stringify(lines),
-        JSON.stringify({ rubricVersion: record.rubricVersion ?? null, partial: !!record.partial, graders: record.graders ?? [], combined: record.combined ?? null, result: record.result ?? null, openness: record.openness ?? null, routing: record.routing ?? null, usage: record.usage ?? null }),
+        JSON.stringify({ rubricVersion: record.rubricVersion ?? null, resolved: record.resolved ?? false, resolvedTurn: record.resolvedTurn ?? null, partial: !!record.partial, graders: record.graders ?? [], combined: record.combined ?? null, result: record.result ?? null, openness: record.openness ?? null, routing: record.routing ?? null, usage: record.usage ?? null }),
         Number.isInteger(record.result?.met) ? record.result.met : null,
         JSON.stringify(record.models ?? null), String(gitCommit),
       ],
