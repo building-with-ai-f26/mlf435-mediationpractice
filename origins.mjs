@@ -30,3 +30,13 @@ export function allowedHosts(port, publicOrigins = []) {
 export function isHostAllowed(host, port, publicOrigins = []) {
   return allowedHosts(port, publicOrigins).includes(host);
 }
+
+// Render pull request previews only. Returns [] unless IS_PULL_REQUEST is exactly "true".
+// Then returns the one origin https://<RENDER_EXTERNAL_HOSTNAME> from the environment (never from a request).
+// The hostname must be a plain DNS name: no wildcard, port, scheme or path.
+export function previewOrigins(env = {}) {
+  if (env.IS_PULL_REQUEST !== "true") return [];
+  const h = String(env.RENDER_EXTERNAL_HOSTNAME || "").trim().toLowerCase();
+  if (!/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(h)) return [];
+  return [`https://${h}`];
+}
