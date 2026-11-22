@@ -358,3 +358,10 @@ export function getAppMode(hostname, search) {
   if (host === "github.io" || host.endsWith(".github.io")) return "demo";
   return new URLSearchParams(search || "").get("mock") === "1" ? "mock" : "live";
 }
+
+// Pure. Turns a /healthz reply into footer text, or "" when there is no usable commit.
+export function formatBuildLabel(health) {
+  const c = health && typeof health.commit === "string" ? health.commit.trim() : "";
+  if (!/^[0-9a-f]{4,40}$/i.test(c)) return "";
+  return `Build ${c.slice(0, 7)}`;
+}
