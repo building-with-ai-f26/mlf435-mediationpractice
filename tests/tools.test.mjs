@@ -249,3 +249,14 @@ test("planRates: below 75 percent overall fails, and any plan for a persona that
   assert.equal(planRates([]).pass, false);
   assert.equal(planRates([]).overall.rate, null);
 });
+
+import { graderTokenStats } from "../tools/report.mjs";
+test("graderTokenStats: median, p95, max, cut-off count and estimates per grader model", () => {
+  const g = (model, tokens, finish = "stop") => ({ model, raw: "x".repeat((tokens ?? 400) * 4), completionTokens: tokens === null ? undefined : tokens, finishReason: finish });
+  const recs = [{ graders: [g("a/m", 100), g("b/m", 300)] }, { graders: [g("a/m", 200), g("b/m", 1500, "length")] }, { graders: [g("a/m", 300), g("b/m", null)] }, { graders: [g("a/m", 400)] }];
+  const stats = Object.fromEntries(graderTokenStats(recs).map(s => [s.model, s]));
+  assert.deepEqual([stats["a/m"].calls, stats["a/m"].median, stats["a/m"].p95, stats["a/m"].max, stats["a/m"].truncated, stats["a/m"].estimated], [4, 200, 400, 400, 0, 0]);
+  assert.deepEqual([stats["b/m"].calls, stats["b/m"].max, stats["b/m"].truncated, stats["b/m"].estimated], [3, 1500, 1, 1]);
+  assert.equal(stats["b/m"].median, 400); // the estimated call is chars / 4
+  assert.deepEqual(graderTokenStats([{ graders: [{ model: "x/y" }] }]), []); // no raw text: skipped
+});

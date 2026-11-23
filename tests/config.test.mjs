@@ -13,8 +13,8 @@ test("every model id is on the server allowlist", () => {
 
 test("token and turn constants keep their values", () => {
   assert.equal(TOKENS_RESIDENT, 150);
-  assert.equal(TOKENS_GRADER, 1500);
-  assert.deepEqual(GRADER_OPTS, { maxTokens: 1500, temperature: 0, reasoning: { enabled: false } });
+  assert.equal(TOKENS_GRADER, 2000);
+  assert.deepEqual(GRADER_OPTS, { maxTokens: 2000, temperature: 0, reasoning: { enabled: false } });
   assert.equal(MAX_TURNS, 10);
 });
 

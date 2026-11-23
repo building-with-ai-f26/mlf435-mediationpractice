@@ -156,6 +156,9 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 - Version 4: the parser drops a leading `RA:` label from a quote (Claude copied it, so correct quotes failed the evidence check and its score collapsed; agreement with GPT 71% before, 83% after), and Grader 2 is Gemini 3.1 Flash Lite. `verifyEvidence` is unchanged. Scores from version 4 are not comparable with earlier versions. Stored sessions keep the `rubricVersion` they were saved with.
 - Persona ranges: `average` retuned to 3 to 7 for the new graders; the others held. Grader disagreement was 17.8% (80 of 450 questions) against 20.6% before.
 
+### Grader token budget
+`TOKENS_GRADER` (public/config.js) is 2000 (was 1500): a current grader was cut off once in 187 calls, which the rule in `docs/model-choice.md` treats as a reason to raise it. `node tools/report.mjs` section (j) shows output tokens per grader call (median, p95, max, cut off); new sessions save the real `completionTokens`.
+
 ### Plan rate bar (how to judge "a plan can be reached")
 `node tools/report.mjs --dir <folder>` prints section (i). The bar for the strong-style personas (`strong`, `typo-good`, `nickname-both`, marked `expectsPlan` in `tools/personas.mjs`) is:
 - at least 75 percent of all their sessions reach a plan, and
