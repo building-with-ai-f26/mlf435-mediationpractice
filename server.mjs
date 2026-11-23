@@ -35,7 +35,8 @@ const DEPLOY_COMMIT = (process.env.RENDER_GIT_COMMIT || "").trim() || GIT_COMMIT
 const ALLOWED_MODELS = new Set([
   "deepseek/deepseek-chat",
   "anthropic/claude-haiku-5.5",
-  "google/gemini-2.5-flash",
+  "google/gemini-3.1-flash-lite",
+  "openai/gpt-6-luna",
 ]);
 
 // The key comes from the environment first, then from .env. It is never logged.

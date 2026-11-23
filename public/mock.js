@@ -79,9 +79,9 @@ const REL_REPLY = {
 // Which rubric questions each mock grader answers YES to. They differ on purpose,
 // so the debrief shows a mix of 3 of 3, 2 of 3 and 1 of 3 agreement.
 const MOCK_YES = {
-  "deepseek/deepseek-chat": [1, 3, 4, 6, 8, 9, 10, 11, 12],
   "anthropic/claude-haiku-5.5": [1, 3, 4, 5, 8, 9, 10, 11, 13, 14],
-  "google/gemini-2.5-flash": [1, 2, 3, 4, 8, 9, 10, 12, 15],
+  "google/gemini-3.1-flash-lite": [1, 3, 4, 6, 8, 9, 10, 11, 12],
+  "openai/gpt-6-luna": [1, 2, 3, 4, 8, 9, 10, 12, 15],
 };
 
 // Quote the first 12 words of a real RA line from the prompt's transcript, so evidence checks pass.
@@ -91,7 +91,7 @@ function mockRubricReply(prompt, model) {
     .filter(l => l.startsWith("RA: "))
     .map(l => l.slice(4).trim().split(/\s+/).slice(0, 12).join(" "))
     .filter(Boolean);
-  const yes = MOCK_YES[model] || MOCK_YES["deepseek/deepseek-chat"];
+  const yes = MOCK_YES[model] || MOCK_YES["anthropic/claude-haiku-5.5"];
   const lines = [];
   for (let id = 1; id <= 15; id++) {
     const i = yes.indexOf(id);

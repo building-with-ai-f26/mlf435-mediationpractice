@@ -18,7 +18,7 @@ const reply = (yesIds, quote = "each of you will get a turn") =>
 const grader = yesIds => ({ ok: true, answers: parseRubricReply(reply(yesIds)).answers });
 
 test("rubric has 15 questions, ids 1..15, version 2", () => {
-  assert.equal(RUBRIC_VERSION, 2);
+  assert.equal(RUBRIC_VERSION, 4);
   assert.deepEqual(RUBRIC.map(q => q.id), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const q of RUBRIC) assert.ok(q.group && q.text && q.tip);
 });
@@ -200,4 +200,21 @@ test("a bare YES on Q8, Q9 or Q11 is still turned into NO (strict rule unchanged
   const v = verifyEvidence(a, history);
   assert.deepEqual(v.changed, [8, 9, 11]);
   assert.deepEqual(v.reasons, { 8: "no_quote", 9: "no_quote", 11: "no_quote" });
+});
+
+test("parseRubricReply drops a leading RA: label from a quote, and verifyEvidence still demands the words", () => {
+  const history = [{ sender: "Alex", text: "Hi." }, { sender: "RA", text: "Thanks for coming. Each of you will get a chance to speak." }];
+  const reply = [
+    'Q1: YES | RA: Thanks for coming. Each of you will get a chance to speak.',
+    'Q2: YES | "RA: Each of you will get a chance to speak."',
+    'Q3: YES | RA: words the RA never said',
+    'Q4: YES | Thanks for coming.',
+    ...Array.from({ length: 11 }, (_, i) => `Q${i + 5}: NO`),
+  ].join("\n");
+  const parsed = parseRubricReply(reply);
+  assert.equal(parsed.answers[1].quote, "Thanks for coming. Each of you will get a chance to speak.");
+  assert.equal(parsed.answers[2].quote, "Each of you will get a chance to speak.");
+  const v = verifyEvidence(parsed.answers, history);
+  assert.deepEqual([1, 2, 3, 4].map(q => v.answers[q].yes), [true, true, false, true]);
+  assert.deepEqual(v.changed, [3]); // an invented quote is still rejected
 });

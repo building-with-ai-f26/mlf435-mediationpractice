@@ -1,7 +1,10 @@
 // Yes/no mediation rubric. Pure functions, no DOM or network, so tests can import this file.
 // Each grader answers 15 questions; code verifies the quotes, votes across graders, and does the math.
 
-export const RUBRIC_VERSION = 2; // 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
+// 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
+// 4: the parser drops a leading "RA:" label from a quote. Claude often copied it, so correct quotes failed the evidence check and its score collapsed (it agreed with GPT on 71% of questions before, 83% after). No question, prompt or evidence rule changed.
+// 3: the three graders changed (Claude Haiku 5.5, Gemini 3.6 Flash, GPT-6 Luna replace DeepSeek, Claude, Llama or Gemini 2.5), so scores are not comparable with versions 1 and 2. No question, prompt or evidence rule changed.
+export const RUBRIC_VERSION = 4;
 
 export const RUBRIC = [
   { id: 1, group: "Setting the stage", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
@@ -78,7 +81,9 @@ export function parseRubricReply(raw) {
     const yes = m[2].toUpperCase() === "YES";
     // Some graders add commentary after the quote, such as: "Great, Alex." (no quote implies fault; see note).
     // Drop one trailing parenthetical before stripping the quote marks.
-    const quote = yes ? (m[3] ?? "").trim().replace(/\s*\([^()]*\)\s*$/, "").replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
+    // Graders often copy the transcript's "RA:" label into the quote. The label is not something the RA said, so it is dropped
+    // here; the rest of the quote must still be found in an RA message (verifyEvidence is unchanged).
+    const quote = yes ? (m[3] ?? "").trim().replace(/\s*\([^()]*\)\s*$/, "").replace(/^["'\u201C\u2018]?\s*RA:\s*/i, "").replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
     answers[id] = { yes, quote };
   }
   return { ok: seen.size >= 10, answers };

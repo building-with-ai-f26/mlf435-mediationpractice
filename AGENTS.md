@@ -5,7 +5,7 @@
 ## 1. Project Overview
 - **What this repo builds:** A local web application that lets Resident Assistants practice mediating roommate conflicts with AI residents. The RA picks a topic and difficulty, mediates between two AI roommates via text (voice in v2), and receives a graded debrief from 3 AI models.
 - **Primary user & core workflow:** A current RA on the builder's Housing Team. Workflow: setup (name, topic, difficulty) → context cards → Alex introduces → Jordan introduces → RA mediates (turn-based) → end session → 3 AI graders answer a 15-question yes/no rubric; code verifies quotes, votes and scores.
-- **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (DeepSeek, Claude Haiku, Gemini Flash)
+- **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (DeepSeek residents; Claude, Gemini and GPT graders)
 
 ## 2. Commands
 All commands run from the repository root with Node 20 or newer. There is no `package.json` and no `npm install`; the project uses only Node built-ins.
@@ -109,9 +109,9 @@ All except the key are read from the process environment only (not from `.env`).
 | Role | Model | Used for | Defined in |
 |------|-------|----------|------------|
 | Resident replies (Alex, Jordan, mediation) | `deepseek/deepseek-chat` | every resident message | `MAIN_MODEL` in `public/config.js` |
-| Grader 1 "DeepSeek" | `deepseek/deepseek-chat` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Grader 2 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Grader 3 "Gemini" | `google/gemini-2.5-flash` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Grader 1 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Grader 2 "Gemini" | `google/gemini-3.1-flash-lite` | debrief, reasoning off. Replaced `google/gemini-3.6-flash`, which cannot turn reasoning off and failed to finish grading in 90 of 118 sessions | `GRADER_MODELS` in `public/config.js` |
+| Grader 3 "GPT" | `openai/gpt-6-luna` | debrief | `GRADER_MODELS` in `public/config.js` |
 | Tagger (labels each RA message) | `anthropic/claude-haiku-5.5` | resident openness, every RA turn | `TAGGER_MODEL` in `public/config.js` |
 | Simulated RA (tools only) | `deepseek/deepseek-chat` by default | `tools/simulate.mjs` | `--ra-model` default in `parseArgs` |
 
@@ -141,13 +141,20 @@ Artifacts live in `.specify/features/roommate-conflict-v1/`:
 - `.specify/memory/constitution.md` — project principles (security, local-first, anti-slop)
 
 ## 8. Rubric Scoring
-The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js` (`RUBRIC_VERSION` 1). Questions are grouped as Setting the stage, Hearing both sides, Staying neutral, Facilitating, Compromise and Closing.
+The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js` (`RUBRIC_VERSION` 4). Questions are grouped as Setting the stage, Hearing both sides, Staying neutral, Facilitating, Compromise and Closing.
 
 1. Each of the three grader models gets the same prompt and answers all 15 questions. Graders judge only the RA's lines.
 2. A YES must include a quote of up to 12 words copied from an RA line. Code checks the quote, ignoring case, extra spaces and curly quotes. If the quote is not found, the YES becomes NO.
 3. A grader's reply is usable if at least 10 of the 15 lines parse. Missing lines count as NO.
 4. Each question is met by vote. With 3 usable graders, 2 YES votes are needed. With 2, both must say YES. With 1, that grader decides. With none, nothing is met.
 5. Score = questions met out of 15, as a percentage, computed in code. The debrief shows "X of 15", the grader agreement for each question, and one tip for the first missed question. The two reflection questions are shown but not scored.
+
+### Rubric versions
+- Version 1: first rubric.
+- Version 2: the grader prompt requires a quote for the "avoid" questions (Q8, Q9, Q11).
+- Version 3: the three graders changed to Claude Haiku 5.5, Gemini and GPT-6 Luna.
+- Version 4: the parser drops a leading `RA:` label from a quote (Claude copied it, so correct quotes failed the evidence check and its score collapsed; agreement with GPT 71% before, 83% after), and Grader 2 is Gemini 3.1 Flash Lite. `verifyEvidence` is unchanged. Scores from version 4 are not comparable with earlier versions. Stored sessions keep the `rubricVersion` they were saved with.
+- Persona ranges: `average` retuned to 3 to 7 for the new graders; the others held. Grader disagreement was 17.8% (80 of 450 questions) against 20.6% before.
 
 ## 9. Analytics (PostHog)
 - The PostHog snippet in `public/index.html` (and its copy in `docs/demo/`) uses the project key `phc_...`. This is a public, client-side key, so it is allowed in code.
@@ -176,7 +183,7 @@ Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to 
 8. **Cost limits depend on OpenRouter.** Every price in `tools/prices.json` is `null`. `--max-cost` counts only costs that the API reports as `usage.cost`. Unknown costs are shown as unknown and are not counted.
 9. **Tests do not cover live model behaviour or the browser UI.** There is no browser test. Model quality is checked by hand and by `tools/simulate.mjs`. `tests/config.test.mjs` does not check `TAGGER_MODEL` against the allowlist.
 10. **Residents agree too easily.** `RESIDENT-NOTES.md` (not yet committed) finds that residents reach agreement whatever the RA does, so the agreement is not a reliable sign of good mediation.
-11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
+11. **Same vendor tagging and grading.** `anthropic/claude-haiku-5.5` is both the tagger, the router and Grader 1. The resident model (`deepseek/deepseek-chat`) is no longer a grader.
 12. **Saved data is not managed.** Live sessions pile up in `transcripts/live/` with no cleanup, and a partial save from a closed tab is not merged with a later full one. The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` (except `live/`, which is git-ignored) is not committed and not in `.gitignore`.
 13. **Mostly local.** Locally the server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
 

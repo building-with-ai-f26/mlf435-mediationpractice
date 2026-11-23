@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 
 export const MAX_TRANSCRIPT_BYTES = 200 * 1024;
-export const INDEX_HEADER = "date,file,scenario,difficulty,ra_turns,partial,met,score_pct,deepseek_met,claude_met,gemini_met";
+export const INDEX_HEADER = "date,file,scenario,difficulty,ra_turns,partial,met,score_pct,claude_met,gemini_met,gpt_met";
 
 // Only these top-level fields are kept. Anything else the browser sends is dropped.
 const KEEP = ["schemaVersion", "createdAt", "scenario", "scenario_id", "difficulty", "partial", "models", "rubricVersion", "resolved", "resolvedTurn", "openness", "routing", "transcript", "graders", "combined", "result", "usage"];
@@ -60,7 +60,7 @@ export function indexLine(rec, file) {
   const met = n => (byName[n]?.ok ? byName[n].metCount : null);
   const raTurns = rec.transcript.filter(t => t.role === "ra").length;
   return [localDate(new Date(rec.createdAt || Date.now())), file, rec.scenario, rec.difficulty, raTurns, rec.partial ? "yes" : "no",
-    rec.result?.met ?? null, rec.result?.score ?? null, met("DeepSeek"), met("Claude"), met("Gemini")].map(csv).join(",");
+    rec.result?.met ?? null, rec.result?.score ?? null, met("Claude"), met("Gemini"), met("GPT")].map(csv).join(",");
 }
 
 // Writes the file and appends the index row. Returns the path relative to baseDir.

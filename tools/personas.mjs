@@ -2,6 +2,7 @@
 // expected = { min, max } met count out of 15, or null when there is no expectation.
 // Ranges were retuned on 2026-11-22 from two live eval runs (rubric v1 and v2, 3 runs per persona, noise/medium):
 // each range covers both runs' mean score with about 1 point of margin. side-taker and minimal have no data yet, so they are unchanged.
+// 2026-11-23: `average` retuned to 3 to 7 for the rubric v4 graders (Claude, Gemini 3.1 Flash Lite, GPT-6 Luna): 3 runs scored 4, 5 and 6. The other ranges still held.
 
 const BASE = `You are playing a Resident Assistant (RA) named Sam in a practice mediation chat between two college roommates, Alex and Jordan. You write only the RA's next message.
 
@@ -47,7 +48,7 @@ export const PERSONAS = [
       ["Setting ground rules.", "Scheduling a check-in or any follow-up.", "Taking sides."]),
   },
   {
-    id: "average", category: "Normal", expected: { min: 5, max: 9 }, maxTurns: 8,
+    id: "average", category: "Normal", expected: { min: 3, max: 7 }, maxTurns: 8,
     systemPrompt: prompt("A friendly but unpolished RA who asks a few questions, does little reflecting, and ends vaguely.",
       ["Be warm and casual.", "Ask a few simple questions such as how things are going.", "End with something vague like \"hope that helps\"."],
       ["Restating what the roommates said.", "Ground rules, specific agreements and follow-up dates."]),

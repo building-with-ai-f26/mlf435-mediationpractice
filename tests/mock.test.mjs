@@ -8,7 +8,7 @@ import { buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, sc
 const profile = d => getProfiles("noise", d);
 const reply = (prompt) => extractContent(mockResponse("x", [{ role: "system", content: prompt }]));
 
-const MODELS = ["deepseek/deepseek-chat", "anthropic/claude-haiku-5.5", "google/gemini-2.5-flash"];
+const MODELS = ["anthropic/claude-haiku-5.5", "google/gemini-3.1-flash-lite", "openai/gpt-6-luna"];
 const history = [
   { sender: "Alex", text: "Hi, I'm Alex. Jordan's noise keeps me up." },
   { sender: "Jordan", text: "I'm Jordan. My evening classes run late." },
