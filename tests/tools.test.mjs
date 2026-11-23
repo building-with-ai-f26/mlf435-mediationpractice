@@ -22,7 +22,8 @@ test("personas: ten of them with the required shape and table values", () => {
   const table = { strong: [8, 12, 15], "rushed-good": [8, 6, 11], average: [8, 3, 7], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
-    assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "id", "maxTurns", "systemPrompt"]);
+    assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "expectsPlan", "id", "maxTurns", "systemPrompt"].filter(k => k !== "expectsPlan" || p.expectsPlan !== undefined));
+    assert.equal(!!p.expectsPlan, ["strong", "typo-good", "nickname-both"].includes(p.id));
     const [turns, min, max] = table[p.id];
     assert.equal(p.maxTurns, turns, p.id);
     assert.deepEqual(p.expected, min === null ? null : { min, max }, p.id);
@@ -213,4 +214,38 @@ test("report: classifies each changed YES and counts misses per question", () =>
   const m = missRates([rec]);
   assert.equal(m.length, 15);
   assert.deepEqual([m[0].missed, m[1].missed, m[0].share], [1, 0, 1]);
+});
+
+import { planRates, PLAN_BAR } from "../tools/report.mjs";
+const P = (id, difficulty, resolved) => ({ persona: { id }, difficulty, resolved });
+const many = (id, difficulty, resolved, total) => Array.from({ length: total }, (_, i) => P(id, difficulty, i < resolved));
+
+test("planRates: pass bar is 75 percent overall and no cell under 50 percent over 8 or more sessions", () => {
+  assert.deepEqual(PLAN_BAR, { overall: 0.75, cellFloor: 0.5, cellMinSessions: 8 });
+  // 9 + 11 of 12 + 12 = 31 of 36 (86 percent), every cell fine.
+  const good = [...many("strong", "easy", 9, 12), ...many("strong", "hard", 11, 12), ...many("typo-good", "medium", 11, 12), ...many("hostile", "easy", 0, 4)];
+  const r = planRates(good);
+  assert.deepEqual([r.overall.n, r.overall.resolved], [36, 31]);
+  assert.equal(r.pass, true);
+  assert.deepEqual(r.shouldNot, { n: 4, resolved: 0 });
+});
+
+test("planRates: a cell is flagged only under 50 percent over 8 or more sessions; a small bad cell is not judged", () => {
+  const recs = [...many("strong", "easy", 12, 12), ...many("strong", "medium", 12, 12), ...many("typo-good", "hard", 3, 8), ...many("nickname-both", "hard", 0, 3)];
+  const r = planRates(recs);
+  const cell = k => r.cells.find(c => c.cell === k);
+  assert.equal(cell("typo-good / hard").flagged, true); // 3 of 8 = 38 percent
+  assert.equal(cell("nickname-both / hard").flagged, false); // 0 of 3 is too few to judge
+  assert.equal(r.overall.rate >= PLAN_BAR.overall, true); // 27 of 35
+  assert.equal(r.pass, false); // flagged cell fails the bar
+  assert.match(formatReport(buildReport([])), /./); // empty report still prints
+});
+
+test("planRates: below 75 percent overall fails, and any plan for a persona that should not resolve is a problem", () => {
+  assert.equal(planRates([...many("strong", "easy", 6, 10)]).pass, false);
+  const r = planRates([...many("strong", "easy", 10, 10), P("hostile", "easy", true)]);
+  assert.equal(r.shouldNot.resolved, 1);
+  assert.equal(r.pass, false);
+  assert.equal(planRates([]).pass, false);
+  assert.equal(planRates([]).overall.rate, null);
 });
