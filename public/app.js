@@ -1,10 +1,16 @@
 import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
+// The model ids are set on the server (environment). Ask for them once; the defaults in config.js are used if this fails (demo, mock).
+const configReady = MOCK_FOR_CONFIG();
+function MOCK_FOR_CONFIG() {
+  if (isMockMode(location.hostname, location.search)) return Promise.resolve();
+  return fetch("/config.json").then(r => (r.ok ? r.json() : null)).then(c => { applyServerModels(c); }).catch(() => {});
+}
 // ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
 const MOCK = isMockMode(location.hostname, location.search);
 if (MOCK) document.getElementById("demo-banner").hidden = false;
@@ -238,7 +244,7 @@ function setInput(enabled) {
    ============================================================ */
 
 // role is only a label for the token counts saved with a live session.
-async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role = "resident") {
+async function call(model, messages, opts = RESIDENT_OPTS, role = "resident") {
   let data;
   if (MOCK) {
     await new Promise(r => setTimeout(r, 150));
@@ -295,6 +301,7 @@ $("situation-select")?.addEventListener("change", syncConcernField);
 syncConcernField();
 
 async function startSession() {
+  await configReady;
   // The name comes only from the Google sign-in (first name, cleaned). Mock mode and signed-out use "RA".
   // The saved record still says "RA" (buildLiveRecord scrubs this name).
   const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
@@ -334,7 +341,7 @@ async function startSession() {
 
   try {
     showLoading();
-    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles, session.raName) }]);
+    const alexRaw = await call(RESIDENT_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles, session.raName) }]);
     hideLoading();
     const alexText = cleanResponse(alexRaw);
     console.log("[Alex raw]", alexRaw);
@@ -344,7 +351,7 @@ async function startSession() {
     scrollToBottom();
 
     showLoading();
-    const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
+    const jordanRaw = await call(RESIDENT_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
     hideLoading();
     const jordanText = cleanResponse(jordanRaw);
     console.log("[Jordan raw]", jordanRaw);
@@ -420,7 +427,7 @@ async function send() {
     for (const speaker of speakers) {
       const thread = [...session.turnHistory, raEntry, ...replies];
       const standing = proposalStanding(thread, tagList)[speaker.toLowerCase()];
-      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, thread, speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName, standing) }]);
+      const raw = await call(RESIDENT_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, thread, speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName, standing) }]);
       const cleanText = cleanResponse(raw);
       console.log("[Response raw]", raw);
       console.log("[Response clean]", cleanText);
@@ -482,7 +489,7 @@ function liveRecord(results, partial) {
   }
   return buildLiveRecord({
     session, live, graders: results, combined, result, partial, rubricVersion: RUBRIC_VERSION,
-    models: { resident: MAIN_MODEL, tagger: TAGGER_MODEL, router: ROUTER_MODEL, graders: GRADER_MODELS.map(g => g.id) },
+    models: { resident: RESIDENT_MODEL, tagger: TAGGER_MODEL, router: ROUTER_MODEL, graders: GRADER_MODELS.map(g => g.id) },
   });
 }
 
@@ -527,7 +534,7 @@ async function end() {
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: prompt }], GRADER_OPTS, "graders");
+          const raw = await call(g.id, [{ role: "system", content: prompt }], graderOpts(g), "graders");
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
           const parsed = parseRubricReply(raw);
           if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");

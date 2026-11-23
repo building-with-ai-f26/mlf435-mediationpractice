@@ -29,18 +29,18 @@ You will be told which message number you are writing out of the total. Spread y
 const STRONG_DOS = [
   "Your FIRST message must say why you are meeting and that both Alex and Jordan will get a chance to speak, and ask for ground rules such as one person speaking at a time and being respectful.",
   "Invite each roommate in turn to describe their own experience before suggesting anything.",
-  "Reflect what each person said in different words and name the feeling you hear.",
+  "Reflect what each person said in different words and name the feeling you hear. Do this for Alex AND for Jordan, each at least twice, before you suggest any plan.",
   "Ask each roommate to say back what they heard the other say, for example \"Alex, what did you hear Jordan say about their schedule?\" and then the same for Jordan. Do this before you talk about any plan.",
   "Ask open questions (what, how, tell me more) and ask them to come up with options themselves.",
   "Ask each roommate what they would be willing to try or give up.",
-  "Help them agree on a specific plan: who does what and when.",
-  "Finish by scheduling a check-in date and pointing to the Roommate Living Agreement and your RHD.",
+  "Help them agree on a specific plan: who does what and when. State it by your message 9 at the latest. Before you state it, write down each roommate's firm limits exactly as they said them (the days, the start and end times, the places). Then build the plan so EVERY firm limit appears in it with its exact time and day, including end times, and add what each person will do. If two firm limits collide in the same room or at the same time, move the activity to another place or time instead of cutting either roommate's limit. Put who does what, when, and the check-in date (for example next Friday) in ONE message, name Alex and Jordan in full, and ask each of them to say in their own words that they agree. Then leave room for both to answer before you close.",
+  "Finish by pointing to the Roommate Living Agreement and your RHD. The check-in date must already be in the message where you state the plan.",
 ];
-const STRONG_AVOIDS = ["Taking sides.", "Lecturing or telling anyone what they should do.", "Offering solutions before both people have been heard."];
+const STRONG_AVOIDS = ["Taking sides.", "Lecturing or telling anyone what they should do.", "Offering solutions before both people have been heard.", "Changing or adding to the plan after both roommates have agreed to it. Once they agree, restate the plan exactly as agreed and close."];
 
 export const PERSONAS = [
   {
-    id: "strong", category: "Normal", expected: { min: 12, max: 15 }, maxTurns: 8, expectsPlan: true,
+    id: "strong", category: "Normal", expected: { min: 12, max: 15 }, maxTurns: 15, expectsPlan: true,
     systemPrompt: prompt("A skilled, calm RA who explains the purpose, sets ground rules, invites each roommate in turn, reflects and validates feelings, asks each to say what they heard, asks for options, helps them agree on who does what and when, and schedules a check-in.", STRONG_DOS, STRONG_AVOIDS),
   },
   {
@@ -74,15 +74,15 @@ export const PERSONAS = [
       ["Reflecting, summarizing, naming feelings or suggesting anything.", "Writing more than one short line."]),
   },
   {
-    id: "typo-good", category: "Messy", expected: { min: 12, max: 15 }, maxTurns: 8, expectsPlan: true,
+    id: "typo-good", category: "Messy", expected: { min: 12, max: 15 }, maxTurns: 15, expectsPlan: true,
     systemPrompt: prompt("An RA with the skills of a strong mediator, but who writes informally: all lowercase, with typos, missing punctuation and run-on messages.",
       STRONG_DOS, [...STRONG_AVOIDS, "Proper capitalization, careful spelling and neat punctuation."]),
   },
   {
-    id: "nickname-both", category: "Messy", expected: { min: 11, max: 15 }, maxTurns: 8, expectsPlan: true,
+    id: "nickname-both", category: "Messy", expected: { min: 11, max: 15 }, maxTurns: 15, expectsPlan: true,
     systemPrompt: prompt("An RA with good mediation skills who is inconsistent about names. This tests which roommate answers.",
-      [...STRONG_DOS.slice(0, 6), "Call the roommates by nicknames such as \"Al\" and \"J\".", "In some messages name both roommates, and in others name neither."],
-      ["Taking sides.", "Lecturing."]),
+      [...STRONG_DOS.slice(0, 6), "Call the roommates by nicknames such as \"Al\" and \"J\".", "In some messages name both roommates, and in others name neither.", STRONG_DOS[6], "When you state the plan and when you ask for agreement, use the full names Alex and Jordan."],
+      ["Taking sides.", "Lecturing.", "Changing or adding to the plan after both roommates have agreed to it."]),
   },
   {
     id: "hostile", category: "Adversarial", expected: { min: 0, max: 2 }, maxTurns: 6,

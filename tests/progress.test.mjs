@@ -29,8 +29,9 @@ test("resolved is exactly 100", () => {
 });
 
 test("hint names the more guarded resident", () => {
+  // Guarded means below OPEN_ENOUGH (1): a resident at 0.
   assert.match(conversationProgress("exploring", o(0, 2), 2).hint, /Alex is still guarded/);
-  assert.match(conversationProgress("exploring", o(3, 1), 2).hint, /Jordan is still guarded/);
+  assert.match(conversationProgress("exploring", o(3, 0), 2).hint, /Jordan is still guarded/);
 });
 
 test("hints follow the state and use no em dashes", () => {

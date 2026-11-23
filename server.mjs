@@ -5,7 +5,8 @@ import { URL } from "url";
 import { isOriginAllowed, isHostAllowed, parsePublicOrigins, previewOrigins } from "./origins.mjs";
 import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
-import { validateChatBody } from "./chatBody.mjs";
+import { validateChatBody, sendToOpenRouter, zdrRefusalMessage } from "./chatBody.mjs";
+import { RESIDENT_MODEL, allModelIds, modelConfig } from "./public/config.js";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
 import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
@@ -31,13 +32,8 @@ let GIT_COMMIT = "unknown";
 try { GIT_COMMIT = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "unknown"; } catch { /* not a git checkout */ }
 const DEPLOY_COMMIT = (process.env.RENDER_GIT_COMMIT || "").trim() || GIT_COMMIT;
 
-// Keep in sync with public/app.js (MAIN_MODEL, GRADER_MODELS, CONSOLIDATOR_MODEL). The two lists must match.
-const ALLOWED_MODELS = new Set([
-  "deepseek/deepseek-chat",
-  "anthropic/claude-haiku-5.5",
-  "google/gemini-3.1-flash-lite",
-  "openai/gpt-6-luna",
-]);
+// Every model the app uses, from public/config.js (each can be set in the environment). Nothing else is allowed.
+const ALLOWED_MODELS = new Set(allModelIds());
 
 // The key comes from the environment first, then from .env. It is never logged.
 const envPath = path.join(process.cwd(), ".env");
@@ -79,6 +75,7 @@ const query = DATABASE_URL
       }
     }
   : null;
+console.log(`[startup] resident model: ${RESIDENT_MODEL}`);
 console.log(`[startup] session saving: ${query ? "database mode (sessions table)" : "file mode (transcripts/live/)"}`);
 const routes = createApiRoutes({
   verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
@@ -88,6 +85,7 @@ const routes = createApiRoutes({
 
 function sendRoute(res, r) {
   for (const [k, v] of Object.entries(r.headers || {})) res.setHeader(k, v);
+  if (r.audio) { res.writeHead(r.status, { "Content-Type": "audio/mpeg" }); res.end(r.audio); return; }
   send(res, r.status, JSON.stringify(r.body), "application/json");
 }
 
@@ -161,19 +159,7 @@ function serveFile(req, res, pathname) {
 
 // Forward only validated fields. The key is added here and never sent to the browser.
 async function proxyToOpenRouter(reqBody) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": ALLOWED_ORIGIN,
-      "X-Title": "RA Practice Scenarios",
-    },
-    body: JSON.stringify(reqBody),
-    signal: AbortSignal.timeout(60000),
-  });
-  const data = await response.json().catch(() => ({}));
-  return { status: response.status, ok: response.ok, data };
+  return sendToOpenRouter(reqBody, { key: OPENROUTER_API_KEY, referer: ALLOWED_ORIGIN });
 }
 
 function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
@@ -238,7 +224,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/config.json" && (req.method === "GET" || req.method === "HEAD")) {
-    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID }), "application/json");
+    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID, ...modelConfig() }), "application/json");
   }
 
   if (pathname === "/api/chat") {
@@ -266,9 +252,10 @@ const server = http.createServer((req, res) => {
         try {
           const { status, ok, data } = await proxyToOpenRouter(clean);
           if (!ok) {
-            const msg = data.error?.message || `OpenRouter error: ${status}`;
-            console.error("Upstream error:", status, msg);
-            return sendJsonError(res, status, msg);
+            const upstream = data.error?.message || `OpenRouter error: ${status}`;
+            const zdr = zdrRefusalMessage(clean.model, upstream);
+            console.error(zdr ? "[zdr] no zero retention route for model" : "Upstream error:", zdr ? clean.model : status, zdr ? "" : upstream);
+            return sendJsonError(res, status, zdr || upstream); // never retried on another model
           }
           send(res, 200, JSON.stringify(data), "application/json");
         } catch (err) {
