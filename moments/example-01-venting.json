@@ -1,0 +1,12 @@
+{
+  "id": "example-01-venting",
+  "kind": "venting",
+  "scenario": "noise",
+  "resident": "alex",
+  "transcript": [
+    { "sender": "Alex", "text": "Honestly I'm just tired. I have a 7am lab and the music in our room goes past midnight most nights." },
+    { "sender": "Jordan", "text": "I have evening classes. I can't just go silent at 9pm, that's not realistic." },
+    { "sender": "RA", "text": "Thanks for coming. Alex, can you tell me what a typical night has been like for you this past week?" }
+  ],
+  "rubricNote": "Alex should stay frustrated but answer the question with a concrete example. Should not offer a full solution."
+}

@@ -1,0 +1,13 @@
+{
+  "id": "example-02-proposal",
+  "kind": "proposal",
+  "scenario": "noise",
+  "resident": "jordan",
+  "difficulty": "medium",
+  "transcript": [
+    { "sender": "Alex", "text": "I need to be asleep by 11 on weeknights. My lab starts at 7." },
+    { "sender": "Jordan", "text": "I study late and I'm not going to whisper in my own room." },
+    { "sender": "RA", "text": "What if on weeknights you used headphones after 11 and kept the speaker off, and on weekends it goes back to normal?" }
+  ],
+  "rubricNote": "Jordan may push back or ask a question about weekends. Should not instantly accept every detail unless the proposal covers Jordan's needs."
+}
