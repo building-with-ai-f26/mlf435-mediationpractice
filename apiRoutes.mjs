@@ -3,7 +3,7 @@
 // query(text, params) -> rows[]. It is null when DATABASE_URL is not set (files in transcripts/live/ are used then).
 import { validateTranscript, saveTranscript } from "./liveTranscript.mjs";
 import { createRateLimiter } from "./limits.mjs";
-import { VOICE_IDS, MAX_TTS_CHARS } from "./public/config.js";
+import { VOICE_IDS, MAX_TTS_CHARS, MAX_STT_SECONDS, MAX_STT_BYTES, STT_MIME_TYPES } from "./public/config.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIST_COLUMNS = "id, scenario_id, topic, difficulty, started_at, ended_at, turns, met, models, app_version, created_at";
@@ -14,7 +14,7 @@ const safeError = e => [String(e && e.name || "Error"), String(e && e.message ||
 
 export function createApiRoutes({
   verifyUser, query = null, dailyCap = null, liveAiEnabled = false, key = "", gitCommit = "unknown", liveDir = "transcripts/live",
-  userCallsPerHour = 150, userSessionsPerDay = 10, voiceEnabled = false, tts = null, saveFile = saveTranscript, log = console.error,
+  userCallsPerHour = 150, userSessionsPerDay = 10, voiceEnabled = false, tts = null, stt = null, saveFile = saveTranscript, log = console.error,
 }) {
   const userChat = createRateLimiter({ max: userCallsPerHour, windowMs: 60 * 60 * 1000 });
 
@@ -160,5 +160,35 @@ export function createApiRoutes({
     }
   }
 
-  return { authenticate, guardChat, handle, setPracticeMode, speak };
+  // POST /api/stt. The body is the audio itself (Buffer); the browser sends Content-Type and X-Clip-Seconds.
+  // Same order as /api/tts. The audio stays in memory, goes to the provider and is dropped: no file, no log, no copy.
+  // The size cap is the real limit on length. X-Clip-Seconds is checked too, but a client could lie about it.
+  async function transcribe(headers, audio) {
+    if (!voiceEnabled) return err(503, "Voice is turned off on this server.");
+    if (!liveAiEnabled) return err(503, "Live AI is turned off on this server right now.");
+    if (!stt) return err(503, "Voice input is not set up on this server.");
+    const user = await authenticate(headers);
+    if (!user) return needLogin;
+    if (!inVoiceMode(user.id)) return err(409, "Voice mode is off. Choose Voice when you start a session to use the microphone.");
+    const r = userChat.check(user.id);
+    if (!r.ok) return err(429, `You have reached your hourly limit of AI calls. Please wait ${r.retryAfter} seconds and try again.`, { "Retry-After": String(r.retryAfter) });
+    if (dailyCap?.reached()) return err(503, "The daily limit for AI calls has been reached. Please try again tomorrow.");
+    if (!Buffer.isBuffer(audio) || audio.length === 0) return err(400, "No audio received.");
+    if (audio.length > MAX_STT_BYTES) return err(413, `The clip is too large. The limit is ${Math.floor(MAX_STT_BYTES / 1024)} KB.`);
+    const mime = String(headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+    if (!STT_MIME_TYPES.includes(mime)) return err(415, "Unsupported audio type.");
+    const seconds = Number(headers["x-clip-seconds"]);
+    if (!Number.isFinite(seconds) || seconds <= 0) return err(400, "X-Clip-Seconds is required.");
+    if (seconds > MAX_STT_SECONDS) return err(400, `The clip is too long. The limit is ${MAX_STT_SECONDS} seconds.`);
+    dailyCap?.count();
+    try {
+      const text = String(await stt.transcribe({ audio, mime })).trim().slice(0, 1000);
+      return ok({ text });
+    } catch (e) {
+      log("[stt-failed]", String(e && e.name || "Error")); // the name only
+      return err(502, "Voice input failed. You can type your message instead.");
+    }
+  }
+
+  return { authenticate, guardChat, handle, setPracticeMode, speak, transcribe };
 }
