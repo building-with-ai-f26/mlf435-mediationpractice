@@ -5,10 +5,12 @@ import { URL } from "url";
 import { isOriginAllowed, isHostAllowed, parsePublicOrigins, previewOrigins } from "./origins.mjs";
 import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
-import { validateChatBody, sendToOpenRouter } from "./chatBody.mjs";
+import { validateChatBody, sendToOpenRouter, zdrRefusalMessage } from "./chatBody.mjs";
+import { RESIDENT_MODEL, allModelIds, modelConfig } from "./public/config.js";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
 import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
+import { createTtsProvider } from "./tts.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
@@ -31,12 +33,8 @@ let GIT_COMMIT = "unknown";
 try { GIT_COMMIT = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "unknown"; } catch { /* not a git checkout */ }
 const DEPLOY_COMMIT = (process.env.RENDER_GIT_COMMIT || "").trim() || GIT_COMMIT;
 
-// Keep in sync with public/app.js (MAIN_MODEL, GRADER_MODELS, CONSOLIDATOR_MODEL). The two lists must match.
-const ALLOWED_MODELS = new Set([
-  "deepseek/deepseek-chat",
-  "anthropic/claude-haiku-5.5",
-  "meta-llama/llama-3.3-70b-instruct",
-]);
+// Every model the app uses, from public/config.js (each can be set in the environment). Nothing else is allowed.
+const ALLOWED_MODELS = new Set(allModelIds());
 
 // The key comes from the environment first, then from .env. It is never logged.
 const envPath = path.join(process.cwd(), ".env");
@@ -78,8 +76,14 @@ const query = DATABASE_URL
       }
     }
   : null;
+console.log(`[startup] resident model: ${RESIDENT_MODEL}`);
 console.log(`[startup] session saving: ${query ? "database mode (sessions table)" : "file mode (transcripts/live/)"}`);
+// TTS_PROVIDER: environment only. Empty means read-aloud is off. An unknown name also turns it off, with a log line.
+let TTS = null;
+try { TTS = createTtsProvider(process.env.TTS_PROVIDER); } catch (e) { console.error("[config]", e.message, "- read-aloud is off"); }
+console.log(`[startup] read-aloud: ${TTS ? TTS.name : "off"}`);
 const routes = createApiRoutes({
+  tts: TTS,
   verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
   userCallsPerHour: envNumber(process.env.USER_CALLS_PER_HOUR, 150),
   userSessionsPerDay: envNumber(process.env.USER_SESSIONS_PER_DAY, 10),
@@ -87,6 +91,7 @@ const routes = createApiRoutes({
 
 function sendRoute(res, r) {
   for (const [k, v] of Object.entries(r.headers || {})) res.setHeader(k, v);
+  if (r.audio) { res.writeHead(r.status, { "Content-Type": "audio/mpeg" }); res.end(r.audio); return; }
   send(res, r.status, JSON.stringify(r.body), "application/json");
 }
 
@@ -209,7 +214,7 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "OPTIONS") {
     if (origin !== undefined) {
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     }
     res.writeHead(204);
@@ -225,7 +230,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/config.json" && (req.method === "GET" || req.method === "HEAD")) {
-    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID }), "application/json");
+    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID, ...modelConfig() }), "application/json");
   }
 
   if (pathname === "/api/chat") {
@@ -253,9 +258,10 @@ const server = http.createServer((req, res) => {
         try {
           const { status, ok, data } = await proxyToOpenRouter(clean);
           if (!ok) {
-            const msg = data.error?.message || `OpenRouter error: ${status}`;
-            console.error("Upstream error:", status, msg);
-            return sendJsonError(res, status, msg);
+            const upstream = data.error?.message || `OpenRouter error: ${status}`;
+            const zdr = zdrRefusalMessage(clean.model, upstream);
+            console.error(zdr ? "[zdr] no zero retention route for model" : "Upstream error:", zdr ? clean.model : status, zdr ? "" : upstream);
+            return sendJsonError(res, status, zdr || upstream); // never retried on another model
           }
           send(res, 200, JSON.stringify(data), "application/json");
         } catch (err) {
@@ -264,6 +270,22 @@ const server = http.createServer((req, res) => {
         }
       });
     });
+  }
+
+  if (pathname === "/api/tts" || pathname === "/api/practice-mode") {
+    const isTts = pathname === "/api/tts";
+    if (req.method !== (isTts ? "POST" : "PUT")) return sendJsonError(res, 405, "Method not allowed");
+    if (IS_PREVIEW) return sendJsonError(res, 503, "Read-aloud is turned off in pull request previews.");
+    if (refusedByRateLimit(req, res)) return;
+    // Small bodies only: 600 characters of text fits well inside 4 KB.
+    return readBody(req, res, text => {
+      (isTts ? routes.speak(req.headers, text) : routes.setPracticeMode(req.headers, text))
+        .then(r => sendRoute(res, r))
+        .catch(err => {
+          console.error("Route error:", pathname, String(err && err.name || "Error")); // never the message: it could hold text
+          if (!res.headersSent) sendJsonError(res, 500, "Request failed");
+        });
+    }, 4096);
   }
 
   if (pathname === "/api/transcript" || pathname.startsWith("/api/sessions")) {

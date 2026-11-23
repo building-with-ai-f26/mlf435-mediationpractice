@@ -79,9 +79,9 @@ const REL_REPLY = {
 // Which rubric questions each mock grader answers YES to. They differ on purpose,
 // so the debrief shows a mix of 3 of 3, 2 of 3 and 1 of 3 agreement.
 const MOCK_YES = {
-  "deepseek/deepseek-chat": [1, 3, 4, 6, 8, 9, 10, 11, 12],
   "anthropic/claude-haiku-5.5": [1, 3, 4, 5, 8, 9, 10, 11, 13, 14],
-  "google/gemini-2.5-flash": [1, 2, 3, 4, 8, 9, 10, 12, 15],
+  "google/gemini-3.6-flash": [1, 3, 4, 6, 8, 9, 10, 11, 12],
+  "openai/gpt-6-luna": [1, 2, 3, 4, 8, 9, 10, 12, 15],
 };
 
 // Quote the first 12 words of a real RA line from the prompt's transcript, so evidence checks pass.
@@ -91,7 +91,7 @@ function mockRubricReply(prompt, model) {
     .filter(l => l.startsWith("RA: "))
     .map(l => l.slice(4).trim().split(/\s+/).slice(0, 12).join(" "))
     .filter(Boolean);
-  const yes = MOCK_YES[model] || MOCK_YES["deepseek/deepseek-chat"];
+  const yes = MOCK_YES[model] || MOCK_YES["anthropic/claude-haiku-5.5"];
   const lines = [];
   for (let id = 1; id <= 15; id++) {
     const i = yes.indexOf(id);
@@ -134,6 +134,7 @@ function mockTagReply(prompt) {
   const m = prompt.match(/RA message to label:\n"([\s\S]*)"\n\nReply with JSON/);
   const t = m ? m[1] : "";
   const alex = /\balex\b/i.test(t), jordan = /\bjordan\b/i.test(t);
+  const proposal = /\b(what if we|let'?s try|how about|let'?s agree|quiet hours)\b/i.test(t);
   return JSON.stringify({
     addresses: alex && jordan ? "both" : alex ? "alex" : jordan ? "jordan" : "none",
     reflective_listening: /\b(sounds like|i hear|what i'?m hearing|so you)\b/i.test(t),
@@ -144,6 +145,10 @@ function mockTagReply(prompt) {
     proposes_solution: /\b(you should|why don'?t you|let'?s agree|quiet hours at)\b/i.test(t),
     takes_side: /\b(you'?re right|that'?s not fair of)\b/i.test(t),
     lectures: /\b(you need to grow up|you have to learn|should know better)\b/i.test(t),
+    // Mock plans: "what if we ..." or "let's try ..." puts a plan on the table and keeps both must-haves.
+    proposal_on_table: proposal,
+    plan_has_specifics: proposal && /\b(check in|check-in|next (week|friday))\b/i.test(t),
+    meets_needs: { alex: proposal, jordan: proposal },
   });
 }
 

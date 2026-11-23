@@ -97,13 +97,14 @@ export function buildReport(records) {
   });
 
   let asked = 0, disagreed = 0;
+  const byQuestion = Object.fromEntries(RUBRIC.map(q => [q.id, { asked: 0, disagreed: 0 }]));
   for (const r of records) {
     const valid = r.graders.filter(g => g.ok);
     if (valid.length < 2) continue;
     for (const q of RUBRIC) {
       const yes = valid.filter(g => g.answers[q.id]?.yes).length;
-      asked++;
-      if (yes > 0 && yes < valid.length) disagreed++;
+      asked++; byQuestion[q.id].asked++;
+      if (yes > 0 && yes < valid.length) { disagreed++; byQuestion[q.id].disagreed++; }
     }
   }
 
@@ -113,7 +114,7 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
+  return { total: records.length, ids, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null, byQuestion }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -128,6 +129,7 @@ export function formatReport(rep) {
   for (const c of rep.changed) L.push(`${c.grader.padEnd(10)} ${c.changedYesToNo} across ${c.sessions} session(s)`);
   const d = rep.disagreement;
   L.push("", `(d) Questions where valid graders disagreed: ${d.disagreed} of ${d.asked} (${d.share === null ? "n/a" : (d.share * 100).toFixed(1) + "%"})`);
+  L.push("    by question: " + RUBRIC.map(q => `Q${q.id} ${d.byQuestion[q.id].asked ? Math.round(d.byQuestion[q.id].disagreed / d.byQuestion[q.id].asked * 100) + "%" : "n/a"}`).join(", "));
   L.push("", "(e) Miss rate per question (not met in the combined vote)", "Q   missed   group");
   for (const m of rep.misses) L.push(`Q${String(m.id).padEnd(3)}${(m.missed + "/" + m.total).padEnd(9)}${((m.share ?? 0) * 100).toFixed(0).padStart(3)}%  ${m.group}${m.share >= 0.9 ? "   <- 90% or more" : ""}`);
   L.push("", "(f) Changed YES answers, by reason");

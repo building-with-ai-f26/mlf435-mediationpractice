@@ -5,10 +5,11 @@ import path from "path";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
-import { MAIN_MODEL, GRADER_MODELS, GRADER_OPTS, TOKENS_RESIDENT, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
+import { RESIDENT_MODEL, GRADER_MODELS, graderOpts, RESIDENT_OPTS, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
 import { getResponder, commitTurn, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, proposalStanding, resolutionState, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined } from "../public/rubric.js";
 import { mockResponse } from "../public/mock.js";
+import { buildOpenRouterBody, zdrRefusalMessage } from "../chatBody.mjs";
 
 export const SCHEMA_VERSION = 1;
 export const SCENARIOS = ["noise", "cleaning", "guest policy", "hygiene", "shared items", "religious practice"];
@@ -141,7 +142,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     return r;
   };
   const resident = async prompt => {
-    const r = await track("residents", MAIN_MODEL, [{ role: "system", content: prompt }], { maxTokens: TOKENS_RESIDENT });
+    const r = await track("residents", RESIDENT_MODEL, [{ role: "system", content: prompt }], RESIDENT_OPTS);
     if (!r.content) throw new Error(`Empty resident reply (finish_reason: ${r.finishReason})`);
     return cleanResponse(r.content);
   };
@@ -197,7 +198,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
   const graders = await Promise.all(GRADER_MODELS.map(async g => {
     const rec = { name: g.name, model: g.id, ok: false, raw: "", finishReason: null, answers: {}, changed: [], metCount: null };
     try {
-      const r = await track("graders", g.id, [{ role: "system", content: prompt }], GRADER_OPTS);
+      const r = await track("graders", g.id, [{ role: "system", content: prompt }], graderOpts(g));
       rec.raw = r.content; rec.finishReason = r.finishReason;
       const parsed = parseRubricReply(r.content);
       if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
@@ -219,7 +220,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     schemaVersion: SCHEMA_VERSION, createdAt: deps.now().toISOString(), gitCommit,
     scenario, difficulty,
     persona: { id: persona.id, category: persona.category, expected: persona.expected, maxTurns },
-    models: { resident: MAIN_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
+    models: { resident: RESIDENT_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
     rubricVersion: RUBRIC_VERSION,
     resolved: !!session.resolved, resolvedTurn: session.resolvedTurn ?? null,
     openness: { start: openStart, turns: turnLog },
@@ -237,12 +238,16 @@ export function makeApiCall(key) {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "RA Practice Scenarios (tools)" },
-      body: JSON.stringify(buildRequestBody(model, messages, opts)),
+      body: JSON.stringify(buildOpenRouterBody(buildRequestBody(model, messages, opts))), // zero data retention, same as the server
       signal: AbortSignal.timeout(90000),
     });
     const text = await res.text();
     let d = null; try { d = JSON.parse(text); } catch {}
-    if (!res.ok || !d || d.error) throw new Error(redact(`${model} HTTP ${res.status}: ${d?.error?.message || text.slice(0, 300)}`, key));
+    if (!res.ok || !d || d.error) {
+      const zdr = zdrRefusalMessage(model, d?.error?.message);
+      if (zdr) { console.error(`[zdr] no zero retention route for model ${model}`); throw new BudgetError(zdr); } // stop the whole run, no fallback
+      throw new Error(redact(`${model} HTTP ${res.status}: ${d?.error?.message || text.slice(0, 300)}`, key));
+    }
     const c = d.choices?.[0];
     return { content: typeof c?.message?.content === "string" ? c.message.content.trim() : "", finishReason: c?.finish_reason ?? null, usage: d.usage };
   };

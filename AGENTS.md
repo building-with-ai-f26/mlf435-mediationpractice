@@ -5,7 +5,7 @@
 ## 1. Project Overview
 - **What this repo builds:** A local web application that lets Resident Assistants practice mediating roommate conflicts with AI residents. The RA picks a topic and difficulty, mediates between two AI roommates via text (voice in v2), and receives a graded debrief from 3 AI models.
 - **Primary user & core workflow:** A current RA on the builder's Housing Team. Workflow: setup (name, topic, difficulty) → context cards → Alex introduces → Jordan introduces → RA mediates (turn-based) → end session → 3 AI graders answer a 15-question yes/no rubric; code verifies quotes, votes and scores.
-- **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (DeepSeek, Claude Haiku, Gemini Flash)
+- **Tech stack:** Node.js 20+ (built-in `http` module) / Vanilla HTML+CSS+JS / OpenRouter API (Claude Haiku 5.5 for residents, tagger and router; Claude, Gemini and GPT graders)
 
 ## 2. Commands
 All commands run from the repository root with Node 20 or newer. There is no `package.json` and no `npm install`; the project uses only Node built-ins.
@@ -58,15 +58,21 @@ All except the key are read from the process environment only (not from `.env`).
 | `ALLOWED_GOOGLE_DOMAIN` | empty | Optional, environment only. When set, a token is accepted only if `email_verified` is true and its `hd` claim equals this domain. |
 | `USER_CALLS_PER_HOUR` | `150` | Per signed in user, `/api/chat` calls per hour. Over the limit: 429 with `Retry-After`. In memory, reset on restart. |
 | `USER_SESSIONS_PER_DAY` | `10` | Per user, saved sessions per rolling 24 hours, counted from the `sessions` table. Over the limit: 429. Only applies when the database is used. |
+| `RESIDENT_MODEL` | `anthropic/claude-haiku-5.5` | Model that plays Alex and Jordan. Must have a zero data retention route. Added to the server allowlist automatically. Served to the browser in `/config.json`. |
+| `GRADER_1_MODEL`, `GRADER_2_MODEL`, `GRADER_3_MODEL` | `anthropic/claude-haiku-5.5`, `google/gemini-3.6-flash`, `openai/gpt-6-luna` | The three graders (three vendors). Slot 2 asks for low reasoning effort because Gemini cannot turn reasoning off; the other slots turn it off. |
+| `TAGGER_MODEL`, `ROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Tagger and router. |
+| `TTS_PROVIDER` | empty | Read-aloud provider. Empty means off (`/api/tts` returns 503). `stub` returns silent audio for tests and local trials. An unknown name turns read-aloud off with a log line. The real provider is not chosen yet; add it in `tts.mjs`. Environment only. |
 | `DATABASE_URL` | empty | Read from the environment first, then `.env`. Neon Postgres connection string, a secret. The `.env.example` placeholder counts as not set. When empty, sessions are saved as files in `transcripts/live/` as before. Never log it, never commit it, and never use the production string on a dev machine. |
 
-**Server-side auth.** Every call to `/api/chat`, `/api/transcript` and `/api/sessions` needs `Authorization: Bearer <Google ID token>`. `auth.mjs` verifies the token itself with `node:crypto`: RS256 signature against Google's public keys (cached for an hour), issuer, `aud` equal to `GOOGLE_CLIENT_ID`, expiry, and optionally the domain. The user id is the token's `sub`. A missing or bad token gets 401 `Please sign in with Google to continue.` The token is never logged. `GET /config.json` returns `{"googleClientId": ...}` and nothing else. The browser decodes the token only to show `given_name`; it never trusts it.
+**Server-side auth.** Every call to `/api/chat`, `/api/transcript` and `/api/sessions` needs `Authorization: Bearer <Google ID token>`. `auth.mjs` verifies the token itself with `node:crypto`: RS256 signature against Google's public keys (cached for an hour), issuer, `aud` equal to `GOOGLE_CLIENT_ID`, expiry, and optionally the domain. The user id is the token's `sub`. A missing or bad token gets 401 `Please sign in with Google to continue.` The token is never logged. `GET /config.json` returns `googleClientId` and the model ids (`residentModel`, `graderModels`, `taggerModel`, `routerModel`) and nothing else. The browser decodes the token only to show `given_name`; it never trusts it.
 
 **Order of checks on `/api/chat`:** live AI on (else 503), per IP limit (429), login (401), per user hourly limit (429), global daily cap (503). Only a logged in call counts toward the daily cap. A failed login never uses up anyone's quota.
 
 **Sessions routes** (`apiRoutes.mjs`), all need login, all scoped to the signed in user's `user_id`:
 - `POST /api/transcript` saves one session. With `DATABASE_URL` it inserts a row in `sessions` (schema in `migrations/0001_sessions.sql`), the RA is always stored as "RA", and the per user daily limit applies. Without it, it writes a file under `transcripts/live/` as before. Refuses bodies containing `sk-or-`, the loaded key, `npg_...` or a `postgres://user:password@` string, more than 500 lines, or an over long scenario or difficulty.
 - `GET /api/sessions` lists the user's 200 newest sessions (no transcript text). `GET /api/sessions/<uuid>` returns one. `DELETE /api/sessions/<uuid>` deletes one. Another user's id returns 404, the same as a missing one. These return 503 when `DATABASE_URL` is not set. The browser does not call them yet.
+
+**Read-aloud (`tts.mjs`, `apiRoutes.mjs`).** `PUT /api/practice-mode {mode: "text"|"voice"}` tells the server which mode the signed in user is in (in memory, per user, 12 hour expiry, default text). `POST /api/tts {text, resident}` (text at most 600 characters, resident `alex` or `jordan`) returns `audio/mpeg`. Order: live AI on (503), provider set (503), login (401), voice mode (409), per user hourly limit shared with `/api/chat` (429), daily cap shared with `/api/chat` (503), body checks (400). The voice id comes from `VOICE_IDS` in `public/config.js`, never from the request. The text and the audio are never stored or logged. Both routes need the per IP limit and a body of at most 4 KB. Practice mode never reaches the saved record, the graders or the model prompts. In the browser, `public/voice.js` holds the mode setting (remembered in `localStorage`), the pacing helpers and the live message line that push-to-talk will reuse.
 
 `GET /healthz` returns `200 {"ok":true,"commit":"<sha>"}` and nothing else. The commit is `RENDER_GIT_COMMIT` on Render, else the local short git hash, else `unknown`. When `IS_PULL_REQUEST` is `true` (a Render preview) the server forces live AI off and `/api/transcript` returns 503 without writing. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. There is no Content-Security-Policy yet because the PostHog snippet is inline.
 
@@ -83,8 +89,10 @@ All except the key are read from the process environment only (not from `.env`).
 - `public/styles.css` — CSS variables, no frameworks. Warm neutral palette (navy + cream), no AI design clichés.
 - `public/app.js` — Browser logic: Google sign-in (button from Google Identity Services, token in memory and in `sessionStorage` under `ra_id_token`, `authFetch` adds the Bearer header and on a 401 shows the sign-in screen over the page), setup, turn flow, calls to `/api/chat` (or mock replies), debrief rendering, analytics events. Mock mode and the GitHub Pages demo skip sign-in. When signed in, the first name (`given_name`, cleaned to letters, spaces, hyphens and apostrophes, 30 characters) is the facilitator's name in resident prompts and chat labels; otherwise it is "RA". It is never sent to PostHog, and the saved record scrubs it back to "RA".
 - `public/logic.js` — Pure, testable logic (ES module): responder routing, request body, reply cleanup, resident openness and tagger parsing, mediation prompt, agreement check, mock-mode flags.
-- `public/config.js` — No-DOM settings and builders: model ids (`MAIN_MODEL`, `GRADER_MODELS`, `TAGGER_MODEL`), token and option constants, `MAX_TURNS` (10), `getProfiles`, Alex and Jordan intro prompts, `createSession()`. Imported by `app.js`, `mock.js`, tests and `tools/`.
+- `public/config.js` — No-DOM settings and builders: every model id (`RESIDENT_MODEL`, `GRADER_MODELS`, `TAGGER_MODEL`, `ROUTER_MODEL`, each read from the environment with a default; `allModelIds()` feeds the server allowlist), `RESIDENT_OPTS`, `graderOpts`, token and option constants, `MAX_TURNS` (10), `getProfiles`, Alex and Jordan intro prompts, `createSession()`. Imported by `app.js`, `mock.js`, tests and `tools/`.
 - `public/rubric.js` — The 15-question rubric and pure functions: grader prompt, reply parsing, quote check, voting, score, coaching tip. See section 8.
+- `tts.mjs` — TTS providers chosen by `TTS_PROVIDER` (`stub` now). Imported by `server.mjs` and tests.
+- `public/voice.js` — Practice mode storage, text cap for read-aloud, reveal pacing and `createLiveLine`, the message element whose text can grow while audio plays. Imported by `app.js` and tests.
 - `public/liveRecord.js` — Pure: builds the record `app.js` sends at the end of a live session, replaces the RA name with "RA", and counts token usage per role.
 - `public/mock.js` — Canned replies for `?mock=1`. It reads the difficulty from the real mood text in `config.js`. Prompt detection still uses short phrases from the real prompts, and `tests/mock.test.mjs` builds the real intro, mediation and rubric prompts and fails if the mock stops recognising them.
 - `tests/` — 29 `node:test` files, run with `node --test tests/*.test.mjs`, plus `tests/README.md` (Build 4 evaluation tracks).
@@ -108,16 +116,17 @@ All except the key are read from the process environment only (not from `.env`).
 ## 5. Models Used
 | Role | Model | Used for | Defined in |
 |------|-------|----------|------------|
-| Resident replies (Alex, Jordan, mediation) | `deepseek/deepseek-chat` | every resident message | `MAIN_MODEL` in `public/config.js` |
-| Grader 1 "DeepSeek" | `deepseek/deepseek-chat` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Grader 2 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Grader 3 "Llama" | `meta-llama/llama-3.3-70b-instruct` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Tagger (labels each RA message) | `anthropic/claude-haiku-5.5` | resident openness, every RA turn | `TAGGER_MODEL` in `public/config.js` |
+| Resident replies (Alex, Jordan, mediation) | `anthropic/claude-haiku-5.5` | every resident message, reasoning off | `RESIDENT_MODEL` in `public/config.js` (env `RESIDENT_MODEL`) |
+| Grader 1 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS[0]` (env `GRADER_1_MODEL`) |
+| Grader 2 "Gemini" | `google/gemini-3.6-flash` | debrief, low reasoning effort | `GRADER_MODELS[1]` (env `GRADER_2_MODEL`) |
+| Grader 3 "GPT" | `openai/gpt-6-luna` | debrief | `GRADER_MODELS[2]` (env `GRADER_3_MODEL`) |
+| Tagger (labels each RA message) | `anthropic/claude-haiku-5.5` | resident openness, every RA turn | `TAGGER_MODEL` (env `TAGGER_MODEL`) |
+| Router (picks who answers when nobody is named) | `anthropic/claude-haiku-5.5` | unclear RA messages | `ROUTER_MODEL` (env `ROUTER_MODEL`) |
 | Simulated RA (tools only) | `deepseek/deepseek-chat` by default | `tools/simulate.mjs` | `--ra-model` default in `parseArgs` |
 
 Browser calls go through the local server. `tools/` calls OpenRouter directly.
 
-Model IDs must match in three places: `MAIN_MODEL`, `GRADER_MODELS` and `TAGGER_MODEL` in `public/config.js`, and `ALLOWED_MODELS` in `server.mjs`. The server rejects any model not on its allowlist, so update all of them together. `tests/config.test.mjs` checks that `MAIN_MODEL` and the grader ids are on the allowlist. It does not check `TAGGER_MODEL`. `tools/probe-models.mjs` keeps its own copy of the grader ids, so update it by hand too.
+All model ids live in `public/config.js`, each overridable by an environment variable (table above). The server builds `ALLOWED_MODELS` from them (`allModelIds()`) and tells the browser the ids in `/config.json`, so one change is enough. Every model must have a zero data retention route: run `node tools/zdrcheck.mjs`. If OpenRouter answers "No endpoints found", the call fails with a clear message naming the model and is logged (`[zdr]`); it is never retried on another model. `tools/probe-models.mjs` keeps its own copy of the grader ids, so update it by hand.
 
 ## 6. Non-Negotiable Engineering Rules
 1. **Plan before coding:** Before touching multiple files, propose a brief plan and wait for approval.
@@ -141,13 +150,18 @@ Artifacts live in `.specify/features/roommate-conflict-v1/`:
 - `.specify/memory/constitution.md` — project principles (security, local-first, anti-slop)
 
 ## 8. Rubric Scoring
-The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js` (`RUBRIC_VERSION` 1). Questions are grouped as Setting the stage, Hearing both sides, Staying neutral, Facilitating, Compromise and Closing.
+The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js` (`RUBRIC_VERSION` 3). Questions are grouped as Setting the stage, Hearing both sides, Staying neutral, Facilitating, Compromise and Closing.
 
 1. Each of the three grader models gets the same prompt and answers all 15 questions. Graders judge only the RA's lines.
 2. A YES must include a quote of up to 12 words copied from an RA line. Code checks the quote, ignoring case, extra spaces and curly quotes. If the quote is not found, the YES becomes NO.
 3. A grader's reply is usable if at least 10 of the 15 lines parse. Missing lines count as NO.
 4. Each question is met by vote. With 3 usable graders, 2 YES votes are needed. With 2, both must say YES. With 1, that grader decides. With none, nothing is met.
 5. Score = questions met out of 15, as a percentage, computed in code. The debrief shows "X of 15", the grader agreement for each question, and one tip for the first missed question. The two reflection questions are shown but not scored.
+
+### Rubric versions
+- Version 1: first rubric.
+- Version 2: the grader prompt requires a quote for the "avoid" questions (Q8, Q9, Q11).
+- Version 3: the three graders changed to Claude Haiku 5.5, Gemini 3.6 Flash and GPT-6 Luna. No question, prompt or evidence rule changed (`verifyEvidence` is untouched). Scores from version 3 are not comparable with versions 1 and 2. Stored sessions keep the `rubricVersion` they were saved with; nothing is rewritten.
 
 ## 9. Analytics (PostHog)
 - The PostHog snippet in `public/index.html` (and its copy in `docs/demo/`) uses the project key `phc_...`. This is a public, client-side key, so it is allowed in code.
@@ -173,10 +187,10 @@ Every session on the local server (not `?mock=1`, not GitHub Pages) is saved to 
 5. **`probe-models.mjs` tests an old prompt.** It copies a grader prompt with a `SCORE` and `STRENGTHS` format from an earlier version. The app now uses `buildRubricPrompt` in `public/rubric.js`, and there is no `graderPrompt()` in `app.js`. Probe results do not describe the current graders.
 6. **`--max-turns` has no effect.** Each built-in persona sets its own `maxTurns`, and that value wins. The flag only applies to a persona without one, and all ten have one.
 7. **Stale comments.** `server.mjs` says its model list is kept in sync with `public/app.js` and mentions `CONSOLIDATOR_MODEL`. Neither exists now: the lists are in `public/config.js`, and the debrief has no consolidator. `FIXES.md` has the same history.
-8. **Cost limits depend on OpenRouter.** Every price in `tools/prices.json` is `null`. `--max-cost` counts only costs that the API reports as `usage.cost`. Unknown costs are shown as unknown and are not counted.
+8. **Cost limits depend on OpenRouter.** `--max-cost` counts the cost the API reports as `usage.cost`; `tools/prices.json` (USD per million tokens, copied from OpenRouter on 2026-11-23) is only a fallback when a response has no cost. Unknown costs are shown as unknown and are not counted. `DAILY_CALL_CAP` counts calls, not dollars. At the measured Haiku 5.5 cost of about $0.00025 per call (about $0.005 per session), 500 calls a day is about $0.13.
 9. **Tests do not cover live model behaviour or the browser UI.** There is no browser test. Model quality is checked by hand and by `tools/simulate.mjs`. `tests/config.test.mjs` does not check `TAGGER_MODEL` against the allowlist.
 10. **Residents agree too easily.** `RESIDENT-NOTES.md` (not yet committed) finds that residents reach agreement whatever the RA does, so the agreement is not a reliable sign of good mediation.
-11. **Same model plays and grades.** `deepseek/deepseek-chat` is both the resident model and Grader 1, which may bias that grader. This is not measured.
+11. **Same model plays and grades.** `anthropic/claude-haiku-5.5` is the resident model, the tagger, the router and Grader 1, which may bias that grader. This is not measured.
 12. **Saved data is not managed.** Live sessions pile up in `transcripts/live/` with no cleanup, and a partial save from a closed tab is not merged with a later full one. The browser keeps the last 20 sessions in `localStorage` under `ra_logs`, with no UI to view or delete them. `transcripts/` (except `live/`, which is git-ignored) is not committed and not in `.gitignore`.
 13. **Mostly local.** Locally the server binds to `127.0.0.1` with a single key from `.env`. The GitHub Pages demo is mock mode only, with no API calls. Hosting the live app would need a server-side proxy, as section 4 says.
 

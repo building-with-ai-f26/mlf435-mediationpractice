@@ -2,14 +2,14 @@
 // Lists which models have a zero data retention route, then sends one tiny real request per model
 // through the same code path the server uses (sendToOpenRouter). Real calls, billed to your key.
 import fs from "node:fs";
-import { MAIN_MODEL, GRADER_MODELS, TAGGER_MODEL, ROUTER_MODEL } from "../public/config.js";
+import { RESIDENT_MODEL, GRADER_MODELS, TAGGER_MODEL, ROUTER_MODEL } from "../public/config.js";
 import { sendToOpenRouter } from "../chatBody.mjs";
 import { readSetting } from "../auth.mjs";
 
 const key = readSetting("OPENROUTER_API_KEY", process.env, new URL("../.env", import.meta.url).pathname);
 if (!key) { console.error("OPENROUTER_API_KEY not found"); process.exit(1); }
 
-const ids = [...new Set([MAIN_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL, ...process.argv.slice(2)])];
+const ids = [...new Set([RESIDENT_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL, ...process.argv.slice(2)])];
 
 let listed = null;
 try {

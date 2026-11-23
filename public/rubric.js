@@ -1,7 +1,9 @@
 // Yes/no mediation rubric. Pure functions, no DOM or network, so tests can import this file.
 // Each grader answers 15 questions; code verifies the quotes, votes across graders, and does the math.
 
-export const RUBRIC_VERSION = 2; // 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
+// 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
+// 3: the three graders changed (Claude Haiku 5.5, Gemini 3.6 Flash, GPT-6 Luna replace DeepSeek, Claude, Llama or Gemini 2.5), so scores are not comparable with versions 1 and 2. No question, prompt or evidence rule changed.
+export const RUBRIC_VERSION = 3;
 
 export const RUBRIC = [
   { id: 1, group: "Setting the stage", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },

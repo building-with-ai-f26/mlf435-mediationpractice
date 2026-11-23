@@ -3,26 +3,69 @@ import { startingOpenness } from "./logic.js";
 // Settings, resident profiles, resident prompts and session shape. No DOM, no network, no storage,
 // so app.js, mock.js, tests and Node scripts can all import this file.
 
-// Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
-export const MAIN_MODEL = "deepseek/deepseek-chat";
+// Every model id lives here. Node (server, tools) reads each from the environment; the defaults are below.
+// The browser has no environment, so it asks the server (/config.json) and calls applyServerModels().
+// The server builds its allowlist from these same values (allModelIds), so changing one here or in the env is enough.
+// Env names: RESIDENT_MODEL, GRADER_1_MODEL, GRADER_2_MODEL, GRADER_3_MODEL, TAGGER_MODEL, ROUTER_MODEL.
+export const DEFAULT_RESIDENT_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_GRADER_MODELS = ["anthropic/claude-haiku-5.5", "google/gemini-3.6-flash", "openai/gpt-6-luna"];
+export const DEFAULT_TAGGER_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_ROUTER_MODEL = "anthropic/claude-haiku-5.5";
+export function resolveModelId(value, fallback) {
+  const v = String(value ?? "").trim();
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.:-]+$/.test(v) ? v : fallback;
+}
+export const resolveResidentModel = value => resolveModelId(value, DEFAULT_RESIDENT_MODEL);
+const env = name => (typeof process !== "undefined" ? process.env?.[name] : undefined);
+
+export let RESIDENT_MODEL = resolveResidentModel(env("RESIDENT_MODEL"));
+export function setResidentModel(value) { RESIDENT_MODEL = resolveResidentModel(value); }
+// Three graders from three vendors. Gemini cannot turn reasoning off, so its slot asks for low effort instead (see graderOpts).
 export const GRADER_MODELS = [
-  { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  { id: "meta-llama/llama-3.3-70b-instruct",     name: "Llama" },
+  { id: resolveModelId(env("GRADER_1_MODEL"), DEFAULT_GRADER_MODELS[0]), name: "Claude" },
+  { id: resolveModelId(env("GRADER_2_MODEL"), DEFAULT_GRADER_MODELS[1]), name: "Gemini", reasoning: { effort: "low" } },
+  { id: resolveModelId(env("GRADER_3_MODEL"), DEFAULT_GRADER_MODELS[2]), name: "GPT" },
 ];
+export let TAGGER_MODEL = resolveModelId(env("TAGGER_MODEL"), DEFAULT_TAGGER_MODEL);
+export let ROUTER_MODEL = resolveModelId(env("ROUTER_MODEL"), DEFAULT_ROUTER_MODEL);
+
+// Browser: take the ids the server is using (from /config.json). Anything missing or malformed keeps the current value.
+export function applyServerModels(c) {
+  if (!c || typeof c !== "object") return;
+  if (c.residentModel) setResidentModel(c.residentModel);
+  if (Array.isArray(c.graderModels)) c.graderModels.slice(0, GRADER_MODELS.length).forEach((id, i) => { GRADER_MODELS[i].id = resolveModelId(id, GRADER_MODELS[i].id); });
+  if (c.taggerModel) TAGGER_MODEL = resolveModelId(c.taggerModel, TAGGER_MODEL);
+  if (c.routerModel) ROUTER_MODEL = resolveModelId(c.routerModel, ROUTER_MODEL);
+}
+// Every model id the app may call. The server allows exactly these.
+export const allModelIds = () => [...new Set([RESIDENT_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL])];
+// The shape of /config.json's model fields. Used by server.mjs.
+export const modelConfig = () => ({ residentModel: RESIDENT_MODEL, graderModels: GRADER_MODELS.map(g => g.id), taggerModel: TAGGER_MODEL, routerModel: ROUTER_MODEL });
+
 export const TOKENS_RESIDENT = 150;
+// No hidden reasoning for residents: a reasoning model (Haiku) otherwise spends the whole 150 token budget thinking and returns nothing.
+export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } };
 export const TOKENS_GRADER = 1500;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
 export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
+// Options for one grader: the shared ones, with the grader's own reasoning setting when it has one.
+export const graderOpts = g => (g.reasoning ? { ...GRADER_OPTS, reasoning: g.reasoning } : GRADER_OPTS);
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
-export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_TAGGER = 220; // was 150: the tagger now also returns proposal_on_table, meets_needs and plan_has_specifics
 export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
-export const ROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
 export const MAX_TURNS = 10;
+
+// Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
+// The mode never changes what is stored, graded or sent to the models.
+export const PRACTICE_MODES = ["text", "voice"];
+export const DEFAULT_PRACTICE_MODE = "text";
+// Read-aloud. One voice per resident. The server maps the resident to the id, so the browser never sends a voice id.
+// These ids are placeholders until a real TTS provider is chosen (see tts.mjs).
+export const VOICE_IDS = { alex: "voice-alex", jordan: "voice-jordan" };
+export const MAX_TTS_CHARS = 600;
 
 // What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
 // Plain data, one entry per topic, so it can move into a scenario file later without changing shape.

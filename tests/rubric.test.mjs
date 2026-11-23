@@ -18,7 +18,7 @@ const reply = (yesIds, quote = "each of you will get a turn") =>
 const grader = yesIds => ({ ok: true, answers: parseRubricReply(reply(yesIds)).answers });
 
 test("rubric has 15 questions, ids 1..15, version 2", () => {
-  assert.equal(RUBRIC_VERSION, 2);
+  assert.equal(RUBRIC_VERSION, 3);
   assert.deepEqual(RUBRIC.map(q => q.id), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const q of RUBRIC) assert.ok(q.group && q.text && q.tip);
 });

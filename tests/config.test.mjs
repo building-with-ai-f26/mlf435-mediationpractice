@@ -1,15 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, getProfiles, createSession } from "../public/config.js";
+import { RESIDENT_MODEL, GRADER_MODELS, TOKENS_RESIDENT, TOKENS_GRADER, GRADER_OPTS, MAX_TURNS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, getProfiles, createSession } from "../public/config.js";
 
-test("every model id is on the server allowlist", () => {
+test("every model id is on the server allowlist, which is built from config.js", () => {
   const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  for (const id of [MAIN_MODEL, ...GRADER_MODELS.map(g => g.id)]) {
-    assert.ok(src.includes(`"${id}"`), `${id} missing from ALLOWED_MODELS`);
-  }
+  assert.match(src, /new Set\(allModelIds\(\)\)/);
+  const ids = allModelIds();
+  for (const id of [RESIDENT_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL]) assert.ok(ids.includes(id), `${id} missing from allModelIds`);
   assert.equal(GRADER_MODELS.length, 3);
+  // Three different vendors.
+  assert.equal(new Set(GRADER_MODELS.map(g => g.id.split("/")[0])).size, 3);
 });
+
+test("default models: Haiku residents, router and tagger; Claude, Gemini and GPT graders", () => {
+  assert.deepEqual(DEFAULT_GRADER_MODELS, ["anthropic/claude-haiku-5.5", "google/gemini-3.6-flash", "openai/gpt-6-luna"]);
+  assert.equal(resolveModelId(undefined, "a/b"), "a/b");
+  assert.equal(resolveModelId("x/y", "a/b"), "x/y");
+  assert.equal(resolveModelId("bad id", "a/b"), "a/b");
+  // Gemini cannot turn reasoning off; the others can.
+  assert.deepEqual(graderOpts(GRADER_MODELS[1]).reasoning, { effort: "low" });
+  assert.deepEqual(graderOpts(GRADER_MODELS[0]).reasoning, { enabled: false });
+  assert.equal(graderOpts(GRADER_MODELS[2]).temperature, 0);
+});
+
+test("applyServerModels takes ids from /config.json and ignores junk", () => {
+  const before = JSON.stringify(modelConfig());
+  applyServerModels({ residentModel: "bad id", graderModels: ["junk"], taggerModel: 5 });
+  assert.equal(JSON.stringify(modelConfig()), before);
+});
+
 
 test("token and turn constants keep their values", () => {
   assert.equal(TOKENS_RESIDENT, 150);
@@ -43,8 +63,7 @@ test("getProfiles covers every topic and difficulty, and falls back for unknown 
 test("tagger uses Haiku with the grader's low-reasoning, temperature 0 settings and a small budget", () => {
   assert.equal(TAGGER_MODEL, "anthropic/claude-haiku-5.5");
   assert.deepEqual(TAGGER_OPTS, { maxTokens: 220, temperature: 0, reasoning: { enabled: false } });
-  const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  assert.ok(src.includes(`"${TAGGER_MODEL}"`));
+  assert.ok(allModelIds().includes(TAGGER_MODEL));
 });
 
 test("religious practice profile uses only the given facts and keeps both residents respectful", () => {
@@ -70,6 +89,26 @@ test("setup list offers religious practice and the server-free topic list matche
 test("router settings, and the router model is on the server allowlist", () => {
   assert.equal(ROUTER_MODEL, "anthropic/claude-haiku-5.5");
   assert.deepEqual(ROUTER_OPTS, { maxTokens: 30, temperature: 0, reasoning: { enabled: false } });
-  const src = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  assert.ok(src.includes(`"${ROUTER_MODEL}"`));
+  assert.ok(allModelIds().includes(ROUTER_MODEL));
+});
+
+import { resolveResidentModel, DEFAULT_RESIDENT_MODEL, RESIDENT_OPTS, allModelIds, DEFAULT_GRADER_MODELS, resolveModelId, graderOpts, applyServerModels, modelConfig } from "../public/config.js";
+import { zdrRefusalMessage } from "../chatBody.mjs";
+
+test("resident model: default is Haiku, env value used when well formed, junk falls back to the default", () => {
+  assert.equal(DEFAULT_RESIDENT_MODEL, "anthropic/claude-haiku-5.5");
+  assert.equal(resolveResidentModel(undefined), DEFAULT_RESIDENT_MODEL);
+  assert.equal(resolveResidentModel(""), DEFAULT_RESIDENT_MODEL);
+  assert.equal(resolveResidentModel("deepseek/deepseek-chat"), "deepseek/deepseek-chat");
+  assert.equal(resolveResidentModel(" meta-llama/llama-3.3-70b-instruct "), "meta-llama/llama-3.3-70b-instruct");
+  assert.equal(resolveResidentModel("not a model; rm -rf"), DEFAULT_RESIDENT_MODEL);
+  assert.deepEqual(RESIDENT_OPTS, { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } });
+});
+
+test("zdr refusal: the no endpoints error gets a clear message naming the model; other errors are left alone", () => {
+  const m = zdrRefusalMessage("x/y", "No endpoints found matching your data policy (Zero data retention). Configure: https://openrouter.ai/settings/privacy");
+  assert.match(m, /x\/y/);
+  assert.match(m, /no zero data retention route/);
+  assert.equal(zdrRefusalMessage("x/y", "Rate limited"), null);
+  assert.equal(zdrRefusalMessage("x/y", undefined), null);
 });

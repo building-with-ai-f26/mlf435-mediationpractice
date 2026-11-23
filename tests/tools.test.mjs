@@ -52,10 +52,10 @@ test("index line matches the header and leaves unknown cost and failed graders b
   const line = indexLine(rec, "2026-01-05/x.json");
   assert.equal(line.split(",").length, INDEX_HEADER.split(",").length);
   assert.ok(line.startsWith("2026-01-05,2026-01-05/x.json,noise,medium,strong,"));
-  rec.graders[1].ok = false;
+  rec.graders[1].ok = false; // Gemini
   rec.cost.graders.usd = null;
   const cells = indexLine(rec, "f.json").split(",");
-  assert.equal(cells[INDEX_HEADER.split(",").indexOf("claude_met")], "");
+  assert.equal(cells[INDEX_HEADER.split(",").indexOf("gemini_met")], "");
   assert.equal(cells[INDEX_HEADER.split(",").indexOf("cost_graders")], "");
 });
 
@@ -144,7 +144,7 @@ test("budget: the run stops before the next call once the limit is passed", asyn
 // ----- report math, from hand-made fixtures -----
 const fx = (id, met, graderMets, answersByGrader, cost, changed = [0, 0, 0]) => ({
   schemaVersion: 1, persona: { id }, result: { met },
-  graders: ["DeepSeek", "Claude", "Llama"].map((name, i) => ({ name, ok: graderMets[i] !== null, metCount: graderMets[i], changed: Array.from({ length: changed[i] }, (_, k) => k + 1), answers: answersByGrader[i] })),
+  graders: ["Claude", "Gemini", "GPT"].map((name, i) => ({ name, ok: graderMets[i] !== null, metCount: graderMets[i], changed: Array.from({ length: changed[i] }, (_, k) => k + 1), answers: answersByGrader[i] })),
   cost,
 });
 const ans = yesIds => Object.fromEntries(Array.from({ length: 15 }, (_, i) => [i + 1, { yes: yesIds.includes(i + 1), quote: "" }]));
@@ -161,11 +161,13 @@ test("report: means, ranges, ordering, changed count, disagreement and cost", ()
   const s = rep.scores.find(x => x.persona === "strong");
   assert.deepEqual([s.n, s.mean, s.min, s.max, s.inRange], [2, 13, 12, 14, true]);
   assert.equal(rep.scores.find(x => x.persona === "minimal").inRange, true);
-  assert.equal(rep.graderMeans.find(g => g.grader === "Claude").byPersona.strong, 13.5);
-  assert.equal(rep.graderMeans.find(g => g.grader === "Llama").byPersona.minimal, null);
+  assert.equal(rep.graderMeans.find(g => g.grader === "Gemini").byPersona.strong, 13.5);
+  assert.equal(rep.graderMeans.find(g => g.grader === "GPT").byPersona.minimal, null);
   assert.deepEqual(rep.changed.map(c => c.changedYesToNo), [1, 0, 3]);
   // strong #1: no disagreement. strong #2: Q4 differs. minimal: 2 valid graders, Q5 differs. 15 questions each.
-  assert.deepEqual(rep.disagreement, { asked: 45, disagreed: 2, share: 2 / 45 });
+  const { byQuestion, ...overall } = rep.disagreement;
+  assert.deepEqual(overall, { asked: 45, disagreed: 2, share: 2 / 45 });
+  assert.deepEqual([byQuestion[4], byQuestion[5], byQuestion[1]], [{ asked: 3, disagreed: 1 }, { asked: 3, disagreed: 1 }, { asked: 3, disagreed: 0 }]);
   assert.equal(rep.cost.residents.sessions, 2);
   assert.equal(rep.cost.residents.unknown, 1);
   assert.ok(Math.abs(rep.cost.residents.mean - 0.03) < 1e-9);
@@ -207,7 +209,7 @@ test("report: classifies each changed YES and counts misses per question", () =>
     "Q5: NO", "Q6: NO", "Q7: NO", "Q8: NO", "Q9: NO", "Q10: NO", "Q11: NO", "Q12: NO", "Q13: NO", "Q14: NO", "Q15: NO",
   ].join("\n");
   const rec = { schemaVersion: 1, persona: { id: "strong" }, transcript, result: { met: 0 }, combined: Array.from({ length: 15 }, (_, i) => ({ id: i + 1, met: i === 1 })),
-    graders: [{ name: "DeepSeek", ok: true, raw, metCount: 0, changed: [], answers: {} }] };
+    graders: [{ name: "Claude", ok: true, raw, metCount: 0, changed: [], answers: {} }] };
   const kinds = Object.fromEntries(classifyChanges([rec]).map(c => [c.q, c.kind]));
   assert.deepEqual(kinds, { 1: "no_quote", 2: "punctuation_only", 3: "resident_words", 4: "not_found" });
   const m = missRates([rec]);

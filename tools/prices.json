@@ -1,6 +1,23 @@
 {
-  "_note": "USD per million tokens. Fill in from openrouter.ai/models. Used only when the API response has no usage.cost. null means unknown.",
-  "deepseek/deepseek-chat":     { "prompt_per_million": null, "completion_per_million": null },
-  "anthropic/claude-haiku-5.5": { "prompt_per_million": null, "completion_per_million": null },
-  "meta-llama/llama-3.3-70b-instruct":    { "prompt_per_million": null, "completion_per_million": null }
+  "_note": "USD per million tokens, from openrouter.ai/api/v1/models on 2026-11-23. Used only when the API response has no usage.cost, which is the normal case. Re-check before relying on them.",
+  "deepseek/deepseek-chat": {
+    "prompt_per_million": 0.2574,
+    "completion_per_million": 1.0287
+  },
+  "anthropic/claude-haiku-5.5": {
+    "prompt_per_million": 0.1,
+    "completion_per_million": 0.5
+  },
+  "meta-llama/llama-3.3-70b-instruct": {
+    "prompt_per_million": 0.71,
+    "completion_per_million": 0.71
+  },
+  "google/gemini-3.6-flash": {
+    "prompt_per_million": 0.75,
+    "completion_per_million": 3.75
+  },
+  "openai/gpt-6-luna": {
+    "prompt_per_million": 0.1,
+    "completion_per_million": 0.5
+  }
 }

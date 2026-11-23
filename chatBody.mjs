@@ -67,3 +67,10 @@ export async function sendToOpenRouter(clean, { key, referer, env = process.env,
   const data = await response.json().catch(() => ({}));
   return { status: response.status, ok: response.ok, data };
 }
+
+// OpenRouter says "No endpoints found matching your data policy" when a model has no zero retention route.
+// Returns a clear message for that error, or null for any other error. The caller must not fall back to another model.
+export function zdrRefusalMessage(model, upstreamMessage) {
+  if (!/no endpoints found/i.test(String(upstreamMessage ?? ""))) return null;
+  return `The model ${model} has no zero data retention route, so the call was refused. Choose another RESIDENT_MODEL, or set OPENROUTER_ZDR=false for a one-off test.`;
+}

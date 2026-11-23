@@ -1,10 +1,17 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, shouldShowAgreementNotice, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
-import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
+import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText, createLiveLine } from "./voice.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
+// The model ids are set on the server (environment). Ask for them once; the defaults in config.js are used if this fails (demo, mock).
+const configReady = MOCK_FOR_CONFIG();
+function MOCK_FOR_CONFIG() {
+  if (isMockMode(location.hostname, location.search)) return Promise.resolve();
+  return fetch("/config.json").then(r => (r.ok ? r.json() : null)).then(c => { applyServerModels(c); }).catch(() => {});
+}
 // ?mock=1, or any *.github.io host, serves canned replies and grades. No fetch, no API key, no cost.
 const MOCK = isMockMode(location.hostname, location.search);
 if (MOCK) document.getElementById("demo-banner").hidden = false;
@@ -14,7 +21,100 @@ if (MOCK) document.getElementById("demo-banner").hidden = false;
 function track(event, props) {
   try { window.posthog && window.posthog.capture(event, props); } catch (e) { /* ignore */ }
 }
-try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search) }); } catch (e) { /* ignore */ }
+try { window.posthog && window.posthog.register({ app_mode: getAppMode(location.hostname, location.search), env: getEnvName(location.hostname) }); } catch (e) { /* ignore */ }
+
+/* ============================================================
+   GOOGLE SIGN-IN (live mode only; mock and the demo skip it)
+   ============================================================ */
+
+const TOKEN_KEY = "ra_id_token";
+let idToken = null;
+try { idToken = sessionStorage.getItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+if (idToken && !isTokenValid(idToken, Date.now())) idToken = null;
+let gsiStarted = false;
+
+function setSignInMessage(text) { const el = document.getElementById("signin-message"); if (el) el.textContent = text; }
+
+function showSignIn(message) {
+  if (MOCK) return;
+  setSignInMessage(message || "");
+  document.getElementById("signin").hidden = false;
+  document.getElementById("user-bar").hidden = true;
+  initGoogle();
+}
+
+function hideSignIn() {
+  document.getElementById("signin").hidden = true;
+  const given = cleanFacilitatorName(decodeIdToken(idToken)?.given_name);
+  document.getElementById("user-greeting").textContent = given ? `Signed in as ${given}` : "Signed in";
+  document.getElementById("user-bar").hidden = false;
+}
+
+function onCredential(response) {
+  const token = response && response.credential;
+  if (!isTokenValid(token, Date.now())) { setSignInMessage("That sign-in did not work. Please try again."); return; }
+  idToken = token;
+  try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) { /* ignore */ }
+  // Only the Google account id (sub) goes to PostHog, never the email or name.
+  try {
+    const sub = decodeIdToken(token)?.sub;
+    if (sub && window.posthog) window.posthog.identify(String(sub));
+  } catch (e) { /* ignore */ }
+  hideSignIn();
+}
+
+function signOut() {
+  idToken = null;
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+  try { window.google?.accounts?.id?.disableAutoSelect(); } catch (e) { /* ignore */ }
+  try {
+    if (window.posthog) {
+      window.posthog.reset();
+      window.posthog.register({ app_mode: getAppMode(location.hostname, location.search), env: getEnvName(location.hostname) });
+    }
+  } catch (e) { /* ignore */ }
+  showSignIn("");
+}
+
+async function initGoogle() {
+  if (gsiStarted) return;
+  let clientId = "";
+  try {
+    const r = await fetch("/config.json");
+    clientId = r.ok ? (await r.json()).googleClientId || "" : "";
+  } catch (e) { /* ignore */ }
+  if (!clientId) { setSignInMessage("Sign-in is not set up on this server."); return; }
+  const start = () => {
+    if (gsiStarted) return;
+    gsiStarted = true;
+    window.google.accounts.id.initialize({ client_id: clientId, callback: onCredential });
+    window.google.accounts.id.renderButton(document.getElementById("google-button"), { theme: "outline", size: "large", text: "signin_with" });
+  };
+  if (window.google?.accounts?.id) start();
+  else {
+    // The GSI script is async: Google calls this hook when it finishes loading.
+    window.onGoogleLibraryLoad = start;
+    setTimeout(() => { if (!gsiStarted && window.google?.accounts?.id) start(); }, 1500);
+  }
+}
+
+// fetch with the Bearer token. A 401 clears the token and shows the sign-in screen over the page.
+function authFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  return fetch(url, { ...opts, headers }).then(res => {
+    if (res.status === 401) {
+      idToken = null;
+      try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+      showSignIn("Your sign-in expired. Sign in again to continue.");
+    }
+    return res;
+  });
+}
+
+document.getElementById("sign-out-link").addEventListener("click", e => { e.preventDefault(); signOut(); });
+if (!MOCK) { if (idToken) hideSignIn(); else showSignIn(""); }
+if (!MOCK && idToken) { try { const sub = decodeIdToken(idToken)?.sub; if (sub && window.posthog) window.posthog.identify(String(sub)); } catch (e) { /* ignore */ } }
 
 // Footer build label from /healthz. Silent on any failure (demo and mock hosts have no /healthz).
 fetch("/healthz").then(r => r.ok ? r.json() : null).then(h => {
@@ -47,7 +147,154 @@ const DOM = {
   debriefDifficulty: $("debrief-difficulty"),
   graderCards: $("grader-cards"), consolidated: $("consolidated-content"),
   restartBtn: $("restart-btn"), turnCounter: $("turn-counter"),
+  modeText: $("mode-text"), modeVoice: $("mode-voice"), voiceHint: $("voice-hint"), voiceBar: $("voice-bar"), muteBtn: $("mute-btn"),
 };
+
+// Practice mode setting: remembered between sessions, Text the first time. Voice needs the live server.
+if (MOCK) {
+  DOM.modeVoice.disabled = true;
+  DOM.voiceHint.textContent = "Voice needs the live server, so it is off in the demo.";
+  DOM.voiceHint.hidden = false;
+} else {
+  (readStoredMode(localStorage) === "voice" ? DOM.modeVoice : DOM.modeText).checked = true;
+}
+function showVoiceHint() {
+  if (MOCK) return;
+  DOM.voiceHint.hidden = !DOM.modeVoice.checked;
+}
+DOM.modeText.addEventListener("change", showVoiceHint);
+DOM.modeVoice.addEventListener("change", showVoiceHint);
+showVoiceHint();
+DOM.muteBtn.addEventListener("click", () => setMuted(!practice.muted));
+
+/* ============================================================
+   PRACTICE MODE AND READ-ALOUD (voice mode only; text mode never touches any of this)
+   The mode changes only how a reply is shown and heard. The stored message, the grading and the model prompts are the same.
+   ============================================================ */
+
+const practice = { mode: "text", muted: false, audioOk: true };
+const clipUrls = []; // object URLs for this session's audio, revoked when a new session starts
+let currentPlayback = null; // { stop() } while a clip is playing
+
+function setMuted(muted) {
+  practice.muted = muted;
+  writeStoredMuted(localStorage, muted);
+  DOM.muteBtn.textContent = muted ? "Unmute" : "Mute";
+  DOM.muteBtn.setAttribute("aria-pressed", String(muted));
+  document.querySelectorAll(".play-btn").forEach(b => { b.disabled = muted; });
+  if (muted) currentPlayback?.stop();
+}
+
+async function fetchClip(resident, text) {
+  const res = await authFetch("/api/tts", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: ttsText(text), resident }),
+  });
+  if (!res.ok) {
+    let msg = `status ${res.status}`;
+    try { msg = (await res.json()).error?.message || msg; } catch (e) { /* ignore */ }
+    throw new Error(msg);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  clipUrls.push(url);
+  return url;
+}
+
+// Plays a clip. With a live line, the text is revealed in step with the speech. Resolves when the clip ends, fails or is stopped.
+function playClip(url, text, line) {
+  return new Promise(resolve => {
+    const audio = new Audio(url);
+    let done = false, raf = 0;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      cancelAnimationFrame(raf); clearTimeout(guard);
+      audio.pause();
+      if (currentPlayback === handle) currentPlayback = null;
+      line?.finish(text);
+      document.querySelectorAll(".play-btn.playing").forEach(b => { b.classList.remove("playing"); b.textContent = "Play"; });
+      scrollToBottom();
+      resolve();
+    };
+    const handle = { stop: finish };
+    currentPlayback?.stop();
+    currentPlayback = handle;
+    const guard = setTimeout(finish, 90000);
+    audio.addEventListener("ended", finish);
+    audio.addEventListener("error", finish);
+    const tick = () => {
+      if (done) return;
+      if (line) {
+        const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : estimateDurationMs(text);
+        line.update(revealText(text, revealFraction(audio.currentTime * 1000, dur)));
+        scrollToBottom();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    // A blocked autoplay rejects here: the text is shown at once and the play button still works.
+    audio.play().then(tick, finish);
+  });
+}
+
+function addPlayButton(line, resident, text) {
+  const btn = document.createElement("button");
+  btn.className = "play-btn";
+  btn.type = "button";
+  btn.textContent = "Play";
+  btn.disabled = practice.muted;
+  btn.setAttribute("aria-label", `Play ${resident === "alex" ? "Alex" : "Jordan"}'s message aloud`);
+  let clip = null;
+  btn.addEventListener("click", async () => {
+    if (btn.classList.contains("playing")) { currentPlayback?.stop(); return; }
+    try {
+      btn.disabled = true;
+      clip ||= await fetchClip(resident, text);
+      btn.disabled = practice.muted;
+      btn.classList.add("playing"); btn.textContent = "Stop";
+      await playClip(clip, text, null);
+    } catch (e) {
+      btn.disabled = practice.muted;
+      DOM.chatLog.appendChild(sysEl(`Audio is not available: ${e.message}`));
+      scrollToBottom();
+    }
+  });
+  line.controls.appendChild(btn);
+}
+
+// Shows one resident message. Text mode: the message appears at once, exactly as before.
+// Voice mode: the message builds word by word while its audio plays. If audio fails, the full text is shown and the session carries on.
+// Returns the message element. The stored text is always `text`.
+async function showResident(sender, text, resident) {
+  if (practice.mode !== "voice") {
+    const el = msgEl(sender, text, resident);
+    DOM.chatLog.appendChild(el);
+    return el;
+  }
+  const line = createLiveLine(document, { sender, type: resident });
+  DOM.chatLog.appendChild(line.el);
+  hideLoading();
+  scrollToBottom();
+  if (!practice.muted && practice.audioOk) {
+    try {
+      const url = await fetchClip(resident, text);
+      await playClip(url, text, line);
+    } catch (e) {
+      practice.audioOk = false;
+      DOM.chatLog.appendChild(sysEl(`Audio is not available (${e.message}). Replies will show as text.`));
+    }
+  }
+  line.finish(text);
+  addPlayButton(line, resident, text);
+  scrollToBottom();
+  return line.el;
+}
+
+async function syncServerMode(mode) {
+  try {
+    const res = await authFetch("/api/practice-mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+    return res.ok;
+  } catch (e) { return false; }
+}
 
 let session = createSession();
 // What gets saved at the end of a live session (see saveLive). Reset in startSession().
@@ -101,6 +348,17 @@ function sysEl(text) {
   return div;
 }
 
+// "You reached a plan" notice with a button to end and see feedback. Shown once per session.
+function planNoticeEl() {
+  const div = sysEl("You reached a plan. Both residents agreed to what, when and a check-in.");
+  const btn = document.createElement("button");
+  btn.className = "btn btn-small";
+  btn.textContent = "End and see feedback";
+  btn.addEventListener("click", () => end());
+  div.appendChild(btn);
+  return div;
+}
+
 function showLoading() {
   const el = document.getElementById("loading-indicator");
   if (el) el.classList.remove("hidden");
@@ -127,13 +385,13 @@ function setInput(enabled) {
    ============================================================ */
 
 // role is only a label for the token counts saved with a live session.
-async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role = "resident") {
+async function call(model, messages, opts = RESIDENT_OPTS, role = "resident") {
   let data;
   if (MOCK) {
     await new Promise(r => setTimeout(r, 150));
     data = mockResponse(model, messages);
   } else {
-    const res = await fetch(API_URL, {
+    const res = await authFetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildRequestBody(model, messages, opts)),
@@ -143,6 +401,7 @@ async function call(model, messages, opts = { maxTokens: TOKENS_RESIDENT }, role
     } catch {
       throw new Error(`The server sent an unreadable reply (status ${res.status}). Check that it is running.`);
     }
+    if (res.status === 401) throw new Error("Your sign-in expired. Sign in again, then retry.");
     if (!res.ok || data.error) throw new Error(data.error?.message || "API error");
   }
   console.log(formatUsage(model, data.usage));
@@ -175,14 +434,19 @@ function saveLog() {
 }
 
 async function startSession() {
-  session.raName = DOM.raNameInput.value.trim() || "You";
+  await configReady;
+  // Signed in: the first name from the Google token (cleaned). Otherwise the typed name, or "RA".
+  // The saved record still says "RA" (buildLiveRecord scrubs this name).
+  const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
+  session.raName = signedInName !== "RA" ? signedInName : (DOM.raNameInput.value.trim() || "RA");
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
   session.active = true;
   session.lastSpeaker = "Jordan";
   session.turnCount = 0;
-  session.agreementNoticeShown = false;
+  session.resolved = false;
+  session.resolvedTurn = null;
   session.openness = startingOpenness(session.difficulty);
   live = newLiveLog();
   live.opennessStart = { alex: session.openness.alex, jordan: session.openness.jordan };
@@ -199,7 +463,7 @@ async function startSession() {
   DOM.graderCards.innerHTML = "";
   DOM.consolidated.innerHTML = "";
 
-  track("session_started", { topic: session.topic, difficulty: session.difficulty });
+  track("session_started", { topic: session.topic, difficulty: session.difficulty, mode: !MOCK && DOM.modeVoice.checked ? "voice" : "text" });
   const profiles = getProfiles(session.topic, session.difficulty);
   session.profiles = profiles;
   renderCards(profiles);
@@ -207,24 +471,40 @@ async function startSession() {
   DOM.chatLog.appendChild(sysEl(MOCK ? "Session started. MOCK MODE: canned replies, no API calls." : "Session started."));
   setInput(false);
 
+  // Practice mode. Text is the default and the demo is always text. Tell the server, so it can refuse read-aloud calls in text mode.
+  currentPlayback?.stop();
+  clipUrls.splice(0).forEach(u => URL.revokeObjectURL(u));
+  practice.mode = MOCK ? "text" : normalizeMode(DOM.modeVoice.checked ? "voice" : "text");
+  practice.audioOk = true;
+  if (!MOCK) {
+    writeStoredMode(localStorage, practice.mode);
+    const synced = await syncServerMode(practice.mode);
+    if (!synced && practice.mode === "voice") {
+      practice.mode = "text";
+      DOM.chatLog.appendChild(sysEl("Voice mode could not be turned on, so this session is text only."));
+    }
+  }
+  DOM.voiceBar.classList.toggle("hidden", practice.mode !== "voice");
+  setMuted(readStoredMuted(localStorage));
+
   try {
     showLoading();
-    const alexRaw = await call(MAIN_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles) }]);
+    const alexRaw = await call(RESIDENT_MODEL, [{ role: "system", content: alexPrompt(session.topic, session.difficulty, profiles, session.raName) }]);
     hideLoading();
     const alexText = cleanResponse(alexRaw);
     console.log("[Alex raw]", alexRaw);
     console.log("[Alex clean]", alexText);
-    DOM.chatLog.appendChild(msgEl("Alex", alexText, "alex"));
+    await showResident("Alex", alexText, "alex");
     session.turnHistory.push({ sender: "Alex", text: alexText });
     scrollToBottom();
 
     showLoading();
-    const jordanRaw = await call(MAIN_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
+    const jordanRaw = await call(RESIDENT_MODEL, [{ role: "system", content: jordanPrompt(session.topic, session.difficulty, profiles, alexText) }]);
     hideLoading();
     const jordanText = cleanResponse(jordanRaw);
     console.log("[Jordan raw]", jordanRaw);
     console.log("[Jordan clean]", jordanText);
-    DOM.chatLog.appendChild(msgEl("Jordan", jordanText, "jordan"));
+    await showResident("Jordan", jordanText, "jordan");
     session.turnHistory.push({ sender: "Jordan", text: jordanText });
     session.lastSpeaker = "Jordan";
     scrollToBottom();
@@ -282,21 +562,24 @@ async function send() {
     // Tag the RA message, then update openness. An unreadable or failed tagger reply changes nothing.
     let tags = null;
     try {
-      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text) }], TAGGER_OPTS, "tagger"));
+      tags = parseTags(await call(TAGGER_MODEL, [{ role: "system", content: buildTaggerPrompt(session.turnHistory, text, session.profiles) }], TAGGER_OPTS, "tagger"));
     } catch (e) {
       console.warn("[Tagger] failed, openness unchanged:", e.message);
     }
     const openness = updateOpenness(session.openness, tags, session.difficulty);
     console.log("[Tagger]", tags, "openness", openness);
     // One RA message, one or two resident replies in order. The second sees the first.
+    // standing: for how many of this resident's turns a plan that keeps their must-haves has been on the table.
+    const tagList = [...live.turns.map(t => t.tags), tags];
     const replies = [];
     for (const speaker of speakers) {
-      const raw = await call(MAIN_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, [...session.turnHistory, raEntry, ...replies], speaker, turn, session.profiles, openness[speaker.toLowerCase()]) }]);
+      const thread = [...session.turnHistory, raEntry, ...replies];
+      const standing = proposalStanding(thread, tagList)[speaker.toLowerCase()];
+      const raw = await call(RESIDENT_MODEL, [{ role: "system", content: mediationPrompt(session.topic, session.difficulty, thread, speaker, turn, session.profiles, openness[speaker.toLowerCase()], session.raName, standing) }]);
       const cleanText = cleanResponse(raw);
       console.log("[Response raw]", raw);
       console.log("[Response clean]", cleanText);
-      const el = msgEl(speaker, cleanText, speaker.toLowerCase());
-      DOM.chatLog.appendChild(el);
+      const el = await showResident(speaker, cleanText, speaker.toLowerCase());
       shownEls.push(el);
       replies.push({ sender: speaker, text: cleanText });
       if (speaker !== speakers[speakers.length - 1]) { scrollToBottom(); showLoading(); }
@@ -308,8 +591,14 @@ async function send() {
     });
     commitReplies(session, raEntry, replies);
     session.openness = openness;
-    if (shouldShowAgreementNotice(session)) {
-      DOM.chatLog.appendChild(sysEl("It looks like you have reached an agreement. Click End & Debrief to finish."));
+    // Resolved only when both residents accepted a plan with specifics and their openness was earned (see resolutionState).
+    const state = resolutionState(session.turnHistory, live.turns.map(t => t.tags), session.openness);
+    live.turns[live.turns.length - 1].resolution = state;
+    if (state === "resolved" && !session.resolved) {
+      session.resolved = true;
+      session.resolvedTurn = session.turnCount;
+      track("plan_resolved", { turn: session.turnCount });
+      DOM.chatLog.appendChild(planNoticeEl());
     }
     updateTurnCounter();
     if (isTurnCapReached(session.turnCount, MAX_TURNS)) {
@@ -346,7 +635,7 @@ function liveRecord(results, partial) {
   }
   return buildLiveRecord({
     session, live, graders: results, combined, result, partial, rubricVersion: RUBRIC_VERSION,
-    models: { resident: MAIN_MODEL, tagger: TAGGER_MODEL, router: ROUTER_MODEL, graders: GRADER_MODELS.map(g => g.id) },
+    models: { resident: RESIDENT_MODEL, tagger: TAGGER_MODEL, router: ROUTER_MODEL, graders: GRADER_MODELS.map(g => g.id) },
   });
 }
 
@@ -355,7 +644,7 @@ function saveLive(results) {
     if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
     live.saving = true;
     const body = JSON.stringify(liveRecord(results, false));
-    fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
+    authFetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
       .then(res => { live.saved = res.ok; live.saving = false; if (!res.ok) console.warn("[Save] server refused the transcript:", res.status); })
       .catch(e => { live.saving = false; console.warn("[Save] failed:", e.message); });
   } catch (e) { live.saving = false; /* ignore */ }
@@ -366,8 +655,8 @@ function saveLiveOnLeave() {
   try {
     if (MOCK || live.saved || live.saving || live.turns.length < 2) return;
     live.saved = true;
-    const blob = new Blob([JSON.stringify(liveRecord([], true))], { type: "application/json" });
-    navigator.sendBeacon("/api/transcript", blob);
+    // sendBeacon cannot set an Authorization header, so use fetch with keepalive.
+    fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json", ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) }, body: JSON.stringify(liveRecord([], true)), keepalive: true }).catch(() => {});
   } catch (e) { /* ignore */ }
 }
 window.addEventListener("pagehide", saveLiveOnLeave);
@@ -391,12 +680,12 @@ async function end() {
     const results = await Promise.all(
       GRADER_MODELS.map(async g => {
         try {
-          const raw = await call(g.id, [{ role: "system", content: prompt }], GRADER_OPTS, "graders");
+          const raw = await call(g.id, [{ role: "system", content: prompt }], graderOpts(g), "graders");
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
           const parsed = parseRubricReply(raw);
           if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
           const verified = verifyEvidence(parsed.answers, session.turnHistory);
-          if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO, quote not found in RA messages: Q${verified.changed.join(", Q")}`);
+          if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO: ${verified.changed.map(id => `Q${id} (${verified.reasons[id]})`).join(", ")}`);
           return { name: g.name, model: g.id, ok: true, answers: verified.answers, changed: verified.changed };
         } catch (e) {
           const finish = e.finishReason ?? "none (no reply received)";

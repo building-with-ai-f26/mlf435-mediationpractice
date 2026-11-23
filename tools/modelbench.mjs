@@ -6,7 +6,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { TOKENS_RESIDENT, GRADER_OPTS, getProfiles } from "../public/config.js";
+import { RESIDENT_OPTS, GRADER_OPTS, getProfiles } from "../public/config.js";
 import { mediationPrompt, buildRequestBody, cleanResponse, startingOpenness } from "../public/logic.js";
 import { validateChatBody, sendToOpenRouter, zdrEnabled } from "../chatBody.mjs";
 import { readSetting } from "../auth.mjs";
@@ -16,9 +16,6 @@ import { BudgetError, safeWrite, costOf, SCENARIOS, DIFFICULTIES } from "./simul
 export const KINDS = ["opening", "venting", "blaming", "proposal", "pushback", "off_topic", "ra_mistake", "closing"];
 export const CRITERIA = ["voice", "consistency", "reaction", "does_not_do_the_RAs_job"];
 export const MISTAKES = ["breaks_character", "leaks_prompt", "solves_conflict_for_RA", "contradicts_facts"];
-// The app sends resident calls with no reasoning setting. Reasoning models such as Haiku then spend the whole
-// 150 token budget thinking and return nothing (finish_reason "length"), so the bench turns reasoning off for all models.
-export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } };
 export const LABELS = ["A", "B", "C", "D", "E"];
 
 // ---------- pure helpers (tested) ----------

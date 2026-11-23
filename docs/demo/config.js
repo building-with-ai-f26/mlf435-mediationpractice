@@ -3,26 +3,115 @@ import { startingOpenness } from "./logic.js";
 // Settings, resident profiles, resident prompts and session shape. No DOM, no network, no storage,
 // so app.js, mock.js, tests and Node scripts can all import this file.
 
-// Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
-export const MAIN_MODEL = "deepseek/deepseek-chat";
+// Every model id lives here. Node (server, tools) reads each from the environment; the defaults are below.
+// The browser has no environment, so it asks the server (/config.json) and calls applyServerModels().
+// The server builds its allowlist from these same values (allModelIds), so changing one here or in the env is enough.
+// Env names: RESIDENT_MODEL, GRADER_1_MODEL, GRADER_2_MODEL, GRADER_3_MODEL, TAGGER_MODEL, ROUTER_MODEL.
+export const DEFAULT_RESIDENT_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_GRADER_MODELS = ["anthropic/claude-haiku-5.5", "google/gemini-3.6-flash", "openai/gpt-6-luna"];
+export const DEFAULT_TAGGER_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_ROUTER_MODEL = "anthropic/claude-haiku-5.5";
+export function resolveModelId(value, fallback) {
+  const v = String(value ?? "").trim();
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.:-]+$/.test(v) ? v : fallback;
+}
+export const resolveResidentModel = value => resolveModelId(value, DEFAULT_RESIDENT_MODEL);
+const env = name => (typeof process !== "undefined" ? process.env?.[name] : undefined);
+
+export let RESIDENT_MODEL = resolveResidentModel(env("RESIDENT_MODEL"));
+export function setResidentModel(value) { RESIDENT_MODEL = resolveResidentModel(value); }
+// Three graders from three vendors. Gemini cannot turn reasoning off, so its slot asks for low effort instead (see graderOpts).
 export const GRADER_MODELS = [
-  { id: "deepseek/deepseek-chat", name: "DeepSeek" },
-  { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  { id: "google/gemini-2.5-flash",     name: "Gemini" },
+  { id: resolveModelId(env("GRADER_1_MODEL"), DEFAULT_GRADER_MODELS[0]), name: "Claude" },
+  { id: resolveModelId(env("GRADER_2_MODEL"), DEFAULT_GRADER_MODELS[1]), name: "Gemini", reasoning: { effort: "low" } },
+  { id: resolveModelId(env("GRADER_3_MODEL"), DEFAULT_GRADER_MODELS[2]), name: "GPT" },
 ];
+export let TAGGER_MODEL = resolveModelId(env("TAGGER_MODEL"), DEFAULT_TAGGER_MODEL);
+export let ROUTER_MODEL = resolveModelId(env("ROUTER_MODEL"), DEFAULT_ROUTER_MODEL);
+
+// Browser: take the ids the server is using (from /config.json). Anything missing or malformed keeps the current value.
+export function applyServerModels(c) {
+  if (!c || typeof c !== "object") return;
+  if (c.residentModel) setResidentModel(c.residentModel);
+  if (Array.isArray(c.graderModels)) c.graderModels.slice(0, GRADER_MODELS.length).forEach((id, i) => { GRADER_MODELS[i].id = resolveModelId(id, GRADER_MODELS[i].id); });
+  if (c.taggerModel) TAGGER_MODEL = resolveModelId(c.taggerModel, TAGGER_MODEL);
+  if (c.routerModel) ROUTER_MODEL = resolveModelId(c.routerModel, ROUTER_MODEL);
+}
+// Every model id the app may call. The server allows exactly these.
+export const allModelIds = () => [...new Set([RESIDENT_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL])];
+// The shape of /config.json's model fields. Used by server.mjs.
+export const modelConfig = () => ({ residentModel: RESIDENT_MODEL, graderModels: GRADER_MODELS.map(g => g.id), taggerModel: TAGGER_MODEL, routerModel: ROUTER_MODEL });
+
 export const TOKENS_RESIDENT = 150;
+// No hidden reasoning for residents: a reasoning model (Haiku) otherwise spends the whole 150 token budget thinking and returns nothing.
+export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } };
 export const TOKENS_GRADER = 1500;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
 export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
+// Options for one grader: the shared ones, with the grader's own reasoning setting when it has one.
+export const graderOpts = g => (g.reasoning ? { ...GRADER_OPTS, reasoning: g.reasoning } : GRADER_OPTS);
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
-export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
-export const TOKENS_TAGGER = 150;
+export const TOKENS_TAGGER = 220; // was 150: the tagger now also returns proposal_on_table, meets_needs and plan_has_specifics
 export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
-export const ROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
 export const MAX_TURNS = 10;
+
+// Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
+// The mode never changes what is stored, graded or sent to the models.
+export const PRACTICE_MODES = ["text", "voice"];
+export const DEFAULT_PRACTICE_MODE = "text";
+// Read-aloud. One voice per resident. The server maps the resident to the id, so the browser never sends a voice id.
+// These ids are placeholders until a real TTS provider is chosen (see tts.mjs).
+export const VOICE_IDS = { alex: "voice-alex", jordan: "voice-jordan" };
+export const MAX_TTS_CHARS = 600;
+
+// What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
+// Plain data, one entry per topic, so it can move into a scenario file later without changing shape.
+// Every topic has at least one deal that keeps all four must-haves, so a good RA can get to a plan.
+export const NEEDS = {
+  noise: {
+    alex:   { mustHaves: ["Lights out and the room quiet by 10:30pm on weeknights, because of a 7am lab.", "No loud noise or music in the room before 7am."],
+              flexible: ["Weekends can run later.", "Jordan may use headphones or the lounge for loud activities."] },
+    jordan: { mustHaves: ["The study group keeps meeting until 11:30pm on Tuesdays and Thursdays.", "Jordan can talk and move around normally in the room until 10:30pm."],
+              flexible: ["Where the study group meets (the room, the lounge or the library).", "Other nights can wind down earlier."] },
+  },
+  cleaning: {
+    alex:   { mustHaves: ["The kitchen and bathroom are cleaned on a fixed weekly schedule that is written down.", "Dishes are not left in the sink overnight."],
+              flexible: ["Which weekday the deep clean happens.", "The two of them can swap chores some weeks."] },
+    jordan: { mustHaves: ["Jordan's belongings are not moved or rearranged without asking first.", "The cleaning standard is realistic for a student with a heavy week."],
+              flexible: ["Who takes which chore.", "Cleaning can be split into shorter sessions."] },
+  },
+  "guest policy": {
+    alex:   { mustHaves: ["No overnight guests on weeknights, because of early classes.", "Alex gets advance notice before any overnight guest."],
+              flexible: ["How many weekend nights a guest can stay.", "The notice can be a text message."] },
+    jordan: { mustHaves: ["Jordan's partner can still visit and stay over on weekends.", "Jordan does not have to ask permission for daytime visits."],
+              flexible: ["Which weekend nights.", "Where Alex stays when a guest is over, if Alex chooses."] },
+  },
+  hygiene: {
+    alex:   { mustHaves: ["Dirty laundry is kept in a closed hamper and washed at least every two weeks.", "The smell problem is fixed before Alex has visitors."],
+              flexible: ["Which laundry day.", "Using the room's air purifier or an open window."] },
+    jordan: { mustHaves: ["No heavily scented products used in the room, because they cause headaches.", "Jordan is asked politely, not blamed."],
+              flexible: ["Unscented alternatives Alex picks.", "Alex can use scented products outside the room."] },
+  },
+  "shared items": {
+    alex:   { mustHaves: ["Alex's food and chargers are not taken without asking first.", "Anything used up is replaced within a week."],
+              flexible: ["A shared shelf for common items.", "Which items count as shared."] },
+    jordan: { mustHaves: ["There is a clear list of what is shared and what is private.", "Jordan can still borrow small things in an emergency."],
+              flexible: ["How the labels are done.", "How the two split the cost of shared supplies."] },
+  },
+  "religious practice": {
+    alex:   { mustHaves: ["Alex can pray quietly in the room each night without being interrupted.", "Alex's food stays separate from pork, in line with a halal diet."],
+              flexible: ["The exact prayer time can be shared with Jordan ahead of time.", "Which fridge shelf is used."] },
+    jordan: { mustHaves: ["Jordan can keep eating normal foods, including bacon, at home.", "Jordan does not have to explain or justify food choices."],
+              flexible: ["Storing the bacon in a sealed container on its own shelf.", "Cleaning the pans right after cooking."] },
+  },
+};
+
+export function getNeeds(topic) {
+  return NEEDS[topic] || NEEDS.noise;
+}
 
 export function getProfiles(topic, difficulty) {
   const traits = {
@@ -58,14 +147,15 @@ export function getProfiles(topic, difficulty) {
   };
   const t = traits[difficulty] || traits.medium;
   const s = stances[topic] || stances.noise;
+  const n = getNeeds(topic);
   return {
-    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex },
-    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan},
+    alex:  { name: "Alex",  handle: "@alex.bio26",  meta: "20 · Junior · Biology",        trait: "Early riser. Needs structure and quiet.", mood: t.alex,  stance: s.alex,   mustHaves: n.alex.mustHaves,   flexible: n.alex.flexible },
+    jordan:{ name: "Jordan",handle: "@jordan.comm25",meta: "19 · Sophomore · Communications",trait: "Night owl. Social, values freedom.",  mood: t.jordan,stance: s.jordan, mustHaves: n.jordan.mustHaves, flexible: n.jordan.flexible },
   };
 }
 
 
-export function alexPrompt(topic, difficulty, profile) {
+export function alexPrompt(topic, difficulty, profile, raName = "RA") {
   return `You are Alex. ${profile.alex.meta}. ${profile.alex.trait} Currently ${profile.alex.mood}.
 
 The issue: ${profile.alex.stance}
@@ -75,7 +165,7 @@ RULES:
 - Paragraph 1 must be exactly 2 sentences.
 - Paragraph 2 must be exactly 2 sentences.
 - Paragraph 1: Introduce yourself and state the problem.
-- Paragraph 2: Say how it affects you and ask the RA one question.
+- Paragraph 2: Say how it affects you and ask ${raName === "RA" ? "the RA" : raName} one question.
 - Do NOT use em dashes. Use periods only.
 - Do NOT write more than 4 sentences total.
 - Do NOT write one long paragraph.
@@ -107,7 +197,7 @@ export function createSession() {
   return {
     raName: "", topic: "noise", difficulty: "medium",
     turnHistory: [], active: false, lastSpeaker: "Jordan", turnCount: 0,
-    agreementNoticeShown: false,
+    resolved: false, resolvedTurn: null, // set once both residents accept a plan with specifics (see resolutionState)
     openness: startingOpenness("medium"),
   };
 }

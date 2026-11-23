@@ -176,18 +176,26 @@ export const OPENNESS_MARKER = "OPENNESS";
 const TAG_FLAGS = ["reflective_listening", "validates_feeling", "open_question", "invites_to_share", "ground_rules", "proposes_solution", "takes_side", "lectures"];
 const ADDRESSEES = ["alex", "jordan", "both", "none"];
 
-export function buildTaggerPrompt(history, raText) {
-  const recent = history.slice(-4).map(h => `${h.sender}: ${h.text}`).join("\n");
+// profiles (optional): getProfiles() output. When given, the tagger also sees each resident's must-haves
+// so it can judge whether a proposal meets them.
+export function buildTaggerPrompt(history, raText, profiles = null) {
+  const recent = history.slice(-6).map(h => `${h.sender}: ${h.text}`).join("\n");
+  const list = r => (profiles?.[r]?.mustHaves || []).map((m, i) => `${i + 1}) ${m}`).join(" ");
+  const needs = profiles ? `
+What each resident needs for any deal to work (their must-haves):
+Alex: ${list("alex")}
+Jordan: ${list("jordan")}
+` : "";
   return `You label ONE message from a Resident Assistant (RA) who is mediating between two roommates, Alex and Jordan.
 
 Recent conversation:
 ${recent || "(none)"}
-
+${needs}
 RA message to label:
 "${raText}"
 
 Reply with JSON only, no other text, in exactly this shape:
-{"addresses":"alex|jordan|both|none","reflective_listening":false,"validates_feeling":false,"open_question":false,"invites_to_share":false,"ground_rules":false,"proposes_solution":false,"takes_side":false,"lectures":false}
+{"addresses":"alex|jordan|both|none","reflective_listening":false,"validates_feeling":false,"open_question":false,"invites_to_share":false,"ground_rules":false,"proposes_solution":false,"takes_side":false,"lectures":false,"proposal_on_table":false,"plan_has_specifics":false,"meets_needs":{"alex":false,"jordan":false}}
 
 addresses: who the message is aimed at. "both" if it speaks to both roommates, "none" if neither.
 reflective_listening: restates or summarizes what a roommate said.
@@ -197,7 +205,10 @@ invites_to_share: asks a roommate to tell their side or needs.
 ground_rules: sets rules for the conversation.
 proposes_solution: the RA suggests or orders a specific fix.
 takes_side: the RA backs one roommate over the other.
-lectures: the RA scolds, moralizes or talks down.`;
+lectures: the RA scolds, moralizes or talks down.
+proposal_on_table: a specific plan (real times, amounts or actions, not a vague wish) is on the table right now, offered by the RA or a roommate in this message or the recent conversation, and nobody has dropped it.
+plan_has_specifics: this RA message states the plan with what each person will do, when, and a check-in time.
+meets_needs: for each roommate, true only if proposal_on_table is true and the plan keeps BOTH of that roommate's must-haves listed above. False if no must-haves are listed.`;
 }
 
 // Returns the tags object, or null if the reply is not valid. Callers must change nothing on null.
@@ -214,6 +225,12 @@ export function parseTags(raw) {
     if (typeof o[f] !== "boolean") return null;
     tags[f] = o[f];
   }
+  // Resolution fields. Optional, so an older or shorter tagger reply still parses; anything missing counts as false.
+  const m = o.meets_needs && typeof o.meets_needs === "object" ? o.meets_needs : {};
+  tags.proposal_on_table = o.proposal_on_table === true;
+  tags.plan_has_specifics = o.plan_has_specifics === true;
+  tags.meets_needs = { alex: m.alex === true, jordan: m.jordan === true };
+  if (!tags.proposal_on_table) tags.meets_needs = { alex: false, jordan: false };
   return tags;
 }
 
@@ -253,8 +270,86 @@ export function updateOpenness(state, tags, difficulty) {
   return next;
 }
 
+// ---- Resolution ----
+// A plan is "resolved" only when the RA's behaviour earned it, not because a clock ran out.
+// tags: one entry per RA message, in order (null when the tagger failed). history: turnHistory, the two intros first.
+// A resident reply belongs to the RA message before it.
+
+const isResidentName = n => n === "Alex" || n === "Jordan";
+
+// How many consecutive resident replies each resident has given while a proposal that keeps THEIR must-haves stayed on the table.
+// A reply in a turn where it did not resets that resident to 0. Zero too if the latest RA message no longer has it on the table.
+export function proposalStanding(history, tags = []) {
+  const standing = { alex: 0, jordan: 0 };
+  let turn = -1;
+  for (const h of history) {
+    if (!isResidentName(h.sender)) { turn += 1; continue; }
+    if (turn < 0) continue; // the two intros come before any RA message
+    const r = h.sender.toLowerCase();
+    const t = tags[turn];
+    standing[r] = t && t.proposal_on_table && t.meets_needs?.[r] ? standing[r] + 1 : 0;
+  }
+  const last = turn >= 0 ? tags[turn] : null;
+  for (const r of ["alex", "jordan"]) if (!(last && last.proposal_on_table && last.meets_needs?.[r])) standing[r] = 0;
+  return standing;
+}
+
+const OPEN_ENOUGH = 2;
+
+// One of: "exploring", "proposal_pending", "accepted_by_one", "resolved".
+// exploring: no proposal is on the table. proposal_pending: one is, and fewer than one resident has accepted it
+// (also when both accepted but the RA has not yet pinned down what, when and a check-in).
+// accepted_by_one: exactly one resident accepted it. resolved: both accepted it, it has specifics.
+// A resident's acceptance counts only if that resident's openness is at least 2 and the proposal keeps their must-haves,
+// so a hostile, side-taking or lecturing RA (openness stays low) never resolves, whatever the residents say.
+export function resolutionState(history, tags = [], openness = {}) {
+  const T = tags.length;
+  if (!T || !tags[T - 1]?.proposal_on_table) return "exploring";
+  let start = T - 1;
+  while (start > 0 && tags[start - 1]?.proposal_on_table) start -= 1;
+
+  const accepted = { alex: false, jordan: false };
+  let turn = -1;
+  const latest = {}; // resident -> { turn, text } of their most recent reply
+  for (const h of history) {
+    if (!isResidentName(h.sender)) { turn += 1; continue; }
+    if (turn >= 0) latest[h.sender.toLowerCase()] = { turn, text: h.text };
+  }
+  for (const r of ["alex", "jordan"]) {
+    const l = latest[r];
+    accepted[r] = !!l && l.turn >= start && !!tags[l.turn]?.meets_needs?.[r] && (openness[r] ?? 0) >= OPEN_ENOUGH && isConfirmation(l.text);
+  }
+  const count = Number(accepted.alex) + Number(accepted.jordan);
+  if (count === 1) return "accepted_by_one";
+  if (count === 2 && tags.slice(start).some(t => t?.plan_has_specifics)) return "resolved";
+  return "proposal_pending";
+}
+
+// The must-haves, the flexible items and what to do when a plan is on the table. Empty if the profile has none.
+function needsBlock(p, level, standing) {
+  if (!p.mustHaves?.length) return "";
+  const list = xs => xs.map((x, i) => `${i + 1}) ${x}`).join(" ");
+  let rule;
+  if (level < OPEN_ENOUGH) {
+    rule = "You are not ready to accept any plan yet, even a fair one. Stay guarded until the RA has made you feel heard.";
+  } else if (standing >= 2) {
+    rule = "A plan that keeps both your must-haves has now been on the table for two of your turns. You must either accept it in your own words (say what you will do and when) or name ONE specific must-have it fails. Do not repeat an objection you already made, and do not stall.";
+  } else {
+    rule = "If a plan keeps both your must-haves, you may accept it once you feel heard, in your own words.";
+  }
+  return `
+WHAT YOU NEED:
+Must-haves (no deal works without both): ${list(p.mustHaves)}
+Flexible (you can give on these): ${list(p.flexible || [])}
+- Never agree to a plan that breaks a must-have. If one does, name the ONE must-have it breaks.
+- ${rule}
+- If the RA scolds you, takes a side, orders you around or mocks you, get more guarded and do not agree to anything.
+`;
+}
+
 // openness: 0..3 for the speaker. Defaults to the difficulty's starting level.
-export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness) {
+// standing: proposalStanding(...)[speaker], how many of this resident's turns a plan that keeps their must-haves has stood.
+export function mediationPrompt(topic, difficulty, history, speaker, turnCount, profile, openness, raName = "RA", standing = 0) {
   const speakerKey = speaker.toLowerCase();
   const p = profile[speakerKey];
   const transcript = history.map(h => `${h.sender}: ${h.text}`).join("\n");
@@ -268,11 +363,11 @@ CONVERSATION:
 ${transcript}
 
 ${OPENNESS_MARKER} ${level} of ${OPENNESS_MAX}: you are ${OPENNESS_BANDS[level]}
-
+${needsBlock(p, level, standing)}
 RULES:
 - Say 1 to 3 short sentences, in a spoken style, the way a college student would talk.
 - No lists.
-- Address the RA directly.
+- Address ${raName === "RA" ? "the RA" : raName} directly.
 - Do NOT use em dashes. Use periods or commas only.
 - Do NOT prefix with "${p.name}:".`;
 }
@@ -337,14 +432,6 @@ export function formatUsage(model, usage) {
   return `[tokens] ${model}: prompt=${p} completion=${c} total=${t}`;
 }
 
-// True the first time both residents agree in a session, false afterwards.
-// Marks the session so the notice is not repeated.
-export function shouldShowAgreementNotice(session) {
-  if (session.agreementNoticeShown || !bothAgreed(session.turnHistory)) return false;
-  session.agreementNoticeShown = true;
-  return true;
-}
-
 // Mock mode is on with ?mock=1, and always on for GitHub Pages (hostname ends in github.io),
 // where there is no server to proxy API calls.
 export function isMockMode(hostname, search) {
@@ -364,4 +451,52 @@ export function formatBuildLabel(health) {
   const c = health && typeof health.commit === "string" ? health.commit.trim() : "";
   if (!/^[0-9a-f]{4,40}$/i.test(c)) return "";
   return `Build ${c.slice(0, 7)}`;
+}
+
+// Pure. Reads the payload of a Google ID token. The browser only uses it for display and expiry;
+// the server is the one that verifies the token. Returns null when it cannot be read.
+export function decodeIdToken(token) {
+  try {
+    const part = String(token || "").split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+    const payload = JSON.parse(new TextDecoder().decode(bytes));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch { return null; }
+}
+
+// Pure. True when the token reads and has not expired (30 second margin).
+export function isTokenValid(token, nowMs) {
+  const p = decodeIdToken(token);
+  return !!(p && typeof p.exp === "number" && p.exp * 1000 > nowMs + 30000);
+}
+
+// Pure. "local" for localhost and 127.0.0.1, "production" otherwise.
+export function getEnvName(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" ? "local" : "production";
+}
+
+// Pure. Cleans a name from a Google profile before it goes into a prompt: letters, spaces, hyphens and
+// apostrophes only, at most 30 characters. Anything else is dropped, so a profile name cannot carry instructions.
+// Returns "" when nothing usable is left.
+export function cleanFacilitatorName(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.normalize("NFC")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{M} '-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30)
+    .trim();
+}
+
+// Pure. The name residents and the chat use for the facilitator: the cleaned given_name of a valid
+// signed-in token, else "RA". Too short, or the same as a resident, also gives "RA".
+export function facilitatorName(token, nowMs) {
+  if (!token || !isTokenValid(token, nowMs)) return "RA";
+  const n = cleanFacilitatorName(decodeIdToken(token)?.given_name);
+  if (n.length < 2 || /^(alex|jordan|ra|you)$/i.test(n)) return "RA";
+  return n;
 }

@@ -1,7 +1,9 @@
 // Yes/no mediation rubric. Pure functions, no DOM or network, so tests can import this file.
 // Each grader answers 15 questions; code verifies the quotes, votes across graders, and does the math.
 
-export const RUBRIC_VERSION = 1;
+// 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
+// 3: the three graders changed (Claude Haiku 5.5, Gemini 3.6 Flash, GPT-6 Luna replace DeepSeek, Claude, Llama or Gemini 2.5), so scores are not comparable with versions 1 and 2. No question, prompt or evidence rule changed.
+export const RUBRIC_VERSION = 3;
 
 export const RUBRIC = [
   { id: 1, group: "Setting the stage", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
@@ -42,6 +44,8 @@ Rules:
 - Judge ONLY the RA's messages. Never judge the residents.
 - Do not consider whether the residents agreed or how the conversation turned out.
 - Answer YES only if you can quote the RA. The quote must be copied exactly from an RA message.
+- Never write a bare YES. A YES with no quote counts as NO.
+- Q8, Q9 and Q11 ask whether the RA held back from something. To answer YES you must still quote one RA line that shows the good behavior: for Q8 a line that treats the problem as shared or stays even-handed, for Q9 a line that asks instead of tells, for Q11 a line that draws out or reflects both roommates before any solution is discussed. If you cannot find such a line, answer NO.
 - If you are unsure, answer NO.
 - No partial credit. Each answer is YES or NO.
 
@@ -74,7 +78,9 @@ export function parseRubricReply(raw) {
     if (id < 1 || id > RUBRIC.length || seen.has(id)) continue;
     seen.add(id);
     const yes = m[2].toUpperCase() === "YES";
-    const quote = yes ? (m[3] ?? "").trim().replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
+    // Some graders add commentary after the quote, such as: "Great, Alex." (no quote implies fault; see note).
+    // Drop one trailing parenthetical before stripping the quote marks.
+    const quote = yes ? (m[3] ?? "").trim().replace(/\s*\([^()]*\)\s*$/, "").replace(/^["'\u201C\u2018]+|["'\u201D\u2019]+$/g, "").trim() : "";
     answers[id] = { yes, quote };
   }
   return { ok: seen.size >= 10, answers };
@@ -85,17 +91,19 @@ export function verifyEvidence(answers, history) {
   const raTexts = history.filter(h => !isResident(h.sender)).map(h => norm(h.text));
   const verified = {};
   const changed = [];
+  const reasons = {}; // id -> "no_quote" (YES with no quote) or "not_found" (quote is not in any RA message)
   for (const q of RUBRIC) {
     const a = answers[q.id] || { yes: false, quote: "" };
     const quote = norm(a.quote);
     if (a.yes && !(quote && raTexts.some(t => t.includes(quote)))) {
       verified[q.id] = { yes: false, quote: "" };
       changed.push(q.id);
+      reasons[q.id] = quote ? "not_found" : "no_quote";
     } else {
       verified[q.id] = { yes: a.yes, quote: a.quote };
     }
   }
-  return { answers: verified, changed };
+  return { answers: verified, changed, reasons };
 }
 
 // gradings: array of parseRubricReply results (after verifyEvidence). Invalid ones (ok false) are ignored.
