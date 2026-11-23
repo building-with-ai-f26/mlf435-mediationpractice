@@ -111,7 +111,7 @@ All except the key are read from the process environment only (not from `.env`).
 | Resident replies (Alex, Jordan, mediation) | `deepseek/deepseek-chat` | every resident message | `MAIN_MODEL` in `public/config.js` |
 | Grader 1 "DeepSeek" | `deepseek/deepseek-chat` | debrief | `GRADER_MODELS` in `public/config.js` |
 | Grader 2 "Claude" | `anthropic/claude-haiku-5.5` | debrief | `GRADER_MODELS` in `public/config.js` |
-| Grader 3 "Gemini" | `google/gemini-2.5-flash` | debrief | `GRADER_MODELS` in `public/config.js` |
+| Grader 3 "Llama" | `meta-llama/llama-3.3-70b-instruct` | debrief | `GRADER_MODELS` in `public/config.js` |
 | Tagger (labels each RA message) | `anthropic/claude-haiku-5.5` | resident openness, every RA turn | `TAGGER_MODEL` in `public/config.js` |
 | Simulated RA (tools only) | `deepseek/deepseek-chat` by default | `tools/simulate.mjs` | `--ra-model` default in `parseArgs` |
 

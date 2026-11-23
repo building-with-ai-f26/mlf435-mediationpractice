@@ -5,7 +5,7 @@ import { URL } from "url";
 import { isOriginAllowed, isHostAllowed, parsePublicOrigins, previewOrigins } from "./origins.mjs";
 import { createRateLimiter, createDailyCap, envNumber, envFlag } from "./limits.mjs";
 import { execSync } from "child_process";
-import { validateChatBody } from "./chatBody.mjs";
+import { validateChatBody, sendToOpenRouter } from "./chatBody.mjs";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
 import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
@@ -35,7 +35,7 @@ const DEPLOY_COMMIT = (process.env.RENDER_GIT_COMMIT || "").trim() || GIT_COMMIT
 const ALLOWED_MODELS = new Set([
   "deepseek/deepseek-chat",
   "anthropic/claude-haiku-5.5",
-  "google/gemini-2.5-flash",
+  "meta-llama/llama-3.3-70b-instruct",
 ]);
 
 // The key comes from the environment first, then from .env. It is never logged.
@@ -160,19 +160,7 @@ function serveFile(req, res, pathname) {
 
 // Forward only validated fields. The key is added here and never sent to the browser.
 async function proxyToOpenRouter(reqBody) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": ALLOWED_ORIGIN,
-      "X-Title": "RA Practice Scenarios",
-    },
-    body: JSON.stringify(reqBody),
-    signal: AbortSignal.timeout(60000),
-  });
-  const data = await response.json().catch(() => ({}));
-  return { status: response.status, ok: response.ok, data };
+  return sendToOpenRouter(reqBody, { key: OPENROUTER_API_KEY, referer: ALLOWED_ORIGIN });
 }
 
 function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {

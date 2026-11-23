@@ -38,3 +38,32 @@ export function validateChatBody(input, allowedModels) {
   }
   return { clean };
 }
+
+// Zero data retention. On unless OPENROUTER_ZDR is false/0/no/off. Read from the server environment only.
+export function zdrEnabled(env = process.env) {
+  const v = String(env.OPENROUTER_ZDR ?? "").trim().toLowerCase();
+  return !["false", "0", "no", "off"].includes(v);
+}
+
+// The one place the OpenRouter body is built. The provider field is set here, never taken from the browser.
+export function buildOpenRouterBody(clean, env = process.env) {
+  if (!zdrEnabled(env)) return { ...clean };
+  return { ...clean, provider: { zdr: true, data_collection: "deny" } };
+}
+
+// The one place the OpenRouter request is sent. Used by server.mjs and tools/zdrcheck.mjs.
+export async function sendToOpenRouter(clean, { key, referer, env = process.env, timeoutMs = 60000 }) {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": referer,
+      "X-Title": "RA Practice Scenarios",
+    },
+    body: JSON.stringify(buildOpenRouterBody(clean, env)),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const data = await response.json().catch(() => ({}));
+  return { status: response.status, ok: response.ok, data };
+}

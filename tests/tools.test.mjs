@@ -144,7 +144,7 @@ test("budget: the run stops before the next call once the limit is passed", asyn
 // ----- report math, from hand-made fixtures -----
 const fx = (id, met, graderMets, answersByGrader, cost, changed = [0, 0, 0]) => ({
   schemaVersion: 1, persona: { id }, result: { met },
-  graders: ["DeepSeek", "Claude", "Gemini"].map((name, i) => ({ name, ok: graderMets[i] !== null, metCount: graderMets[i], changed: Array.from({ length: changed[i] }, (_, k) => k + 1), answers: answersByGrader[i] })),
+  graders: ["DeepSeek", "Claude", "Llama"].map((name, i) => ({ name, ok: graderMets[i] !== null, metCount: graderMets[i], changed: Array.from({ length: changed[i] }, (_, k) => k + 1), answers: answersByGrader[i] })),
   cost,
 });
 const ans = yesIds => Object.fromEntries(Array.from({ length: 15 }, (_, i) => [i + 1, { yes: yesIds.includes(i + 1), quote: "" }]));
@@ -162,7 +162,7 @@ test("report: means, ranges, ordering, changed count, disagreement and cost", ()
   assert.deepEqual([s.n, s.mean, s.min, s.max, s.inRange], [2, 13, 12, 14, true]);
   assert.equal(rep.scores.find(x => x.persona === "minimal").inRange, true);
   assert.equal(rep.graderMeans.find(g => g.grader === "Claude").byPersona.strong, 13.5);
-  assert.equal(rep.graderMeans.find(g => g.grader === "Gemini").byPersona.minimal, null);
+  assert.equal(rep.graderMeans.find(g => g.grader === "Llama").byPersona.minimal, null);
   assert.deepEqual(rep.changed.map(c => c.changedYesToNo), [1, 0, 3]);
   // strong #1: no disagreement. strong #2: Q4 differs. minimal: 2 valid graders, Q5 differs. 15 questions each.
   assert.deepEqual(rep.disagreement, { asked: 45, disagreed: 2, share: 2 / 45 });

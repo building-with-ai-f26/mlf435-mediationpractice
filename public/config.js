@@ -8,7 +8,7 @@ export const MAIN_MODEL = "deepseek/deepseek-chat";
 export const GRADER_MODELS = [
   { id: "deepseek/deepseek-chat", name: "DeepSeek" },
   { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  { id: "google/gemini-2.5-flash",     name: "Gemini" },
+  { id: "meta-llama/llama-3.3-70b-instruct",     name: "Llama" },
 ];
 export const TOKENS_RESIDENT = 150;
 export const TOKENS_GRADER = 1500;

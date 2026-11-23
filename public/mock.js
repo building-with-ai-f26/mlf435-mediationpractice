@@ -81,7 +81,7 @@ const REL_REPLY = {
 const MOCK_YES = {
   "deepseek/deepseek-chat": [1, 3, 4, 6, 8, 9, 10, 11, 12],
   "anthropic/claude-haiku-5.5": [1, 3, 4, 5, 8, 9, 10, 11, 13, 14],
-  "google/gemini-2.5-flash": [1, 2, 3, 4, 8, 9, 10, 12, 15],
+  "meta-llama/llama-3.3-70b-instruct": [1, 2, 3, 4, 8, 9, 10, 12, 15],
 };
 
 // Quote the first 12 words of a real RA line from the prompt's transcript, so evidence checks pass.
