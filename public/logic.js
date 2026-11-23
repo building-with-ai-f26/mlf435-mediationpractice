@@ -325,6 +325,27 @@ export function resolutionState(history, tags = [], openness = {}) {
   return "proposal_pending";
 }
 
+// ---- Progress toward a plan ----
+// Pure. Drives the toolbar bar and its gray hint. Never used for grading or for what residents say.
+// state: resolutionState(...). openness: { alex, jordan } 0..3. turnCount: RA turns so far.
+// Returns { percent 0..100, hint }. Openness is worth up to 60 points, a plan on the table adds 15,
+// one acceptance 25, and 100 only when resolved. The hint is one nudge about the next useful move.
+export function conversationProgress(state, openness = {}, turnCount = 0) {
+  const a = clamp(openness.alex ?? 0), j = clamp(openness.jordan ?? 0);
+  if (state === "resolved") return { percent: 100, hint: "Plan reached. Confirm a check-in date, then end the session." };
+  const bonus = { exploring: 0, proposal_pending: 15, accepted_by_one: 25 }[state] ?? 0;
+  const percent = Math.min(95, Math.round((a + j) / (2 * OPENNESS_MAX) * 60) + bonus);
+  let hint;
+  if (turnCount === 0) hint = "Start by saying why you are meeting and that both will get a turn.";
+  else if (state === "accepted_by_one") hint = "One resident is on board. Ask the other what they could live with.";
+  else if (state === "proposal_pending") hint = "Ask each of them if this works, and settle who, what, when and a check-in.";
+  else if (Math.min(a, j) < OPEN_ENOUGH) {
+    const who = a <= j ? "Alex" : "Jordan";
+    hint = `${who} is still guarded. Reflect what ${who} said and name the feeling.`;
+  } else hint = "Both are listening. Ask what each would be willing to try or give up.";
+  return { percent, hint };
+}
+
 // The must-haves, the flexible items and what to do when a plan is on the table. Empty if the profile has none.
 function needsBlock(p, level, standing) {
   if (!p.mustHaves?.length) return "";

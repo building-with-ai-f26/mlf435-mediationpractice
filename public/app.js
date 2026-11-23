@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAIN_MODEL, GRADER_MODELS, TOKENS_RESIDENT, GRADER_OPTS, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -131,7 +131,7 @@ const $ = id => document.getElementById(id);
 
 const DOM = {
   setup: $("setup"), chatView: $("chat-view"), debriefView: $("debrief-view"),
-  raNameInput: $("ra-name"), topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
+  topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
   startBtn: $("start-btn"), raNameDisplay: $("ra-name-display"),
   topicBadge: $("topic-badge"), difficultyBadge: $("difficulty-badge"),
   residentCards: $("resident-cards"), chatLog: $("chat-log"),
@@ -216,6 +216,13 @@ function hideLoading() {
 function scrollToBottom() {
   DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
 }
+function updateProgress(state = "exploring") {
+  const { percent, hint } = conversationProgress(state, session.openness, session.turnCount);
+  const fill = $("progress-fill"), track = $("progress-track"), hintEl = $("progress-hint");
+  if (fill) fill.style.width = `${percent}%`;
+  if (track) track.setAttribute("aria-valuenow", String(percent));
+  if (hintEl) hintEl.textContent = hint;
+}
 function updateTurnCounter() {
   if (DOM.turnCounter) DOM.turnCounter.textContent = `Turn ${Math.min(session.turnCount, MAX_TURNS)} of ${MAX_TURNS}`;
 }
@@ -279,11 +286,19 @@ function saveLog() {
   localStorage.setItem("ra_logs", JSON.stringify(logs.slice(-20)));
 }
 
+// Concern choices belong to the Roommate Conflict situation. Other situations will bring their own list.
+function syncConcernField() {
+  const field = $("concern-field");
+  if (field) field.hidden = $("situation-select")?.value !== "roommate-conflict";
+}
+$("situation-select")?.addEventListener("change", syncConcernField);
+syncConcernField();
+
 async function startSession() {
-  // Signed in: the first name from the Google token (cleaned). Otherwise the typed name, or "RA".
+  // The name comes only from the Google sign-in (first name, cleaned). Mock mode and signed-out use "RA".
   // The saved record still says "RA" (buildLiveRecord scrubs this name).
   const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
-  session.raName = signedInName !== "RA" ? signedInName : (DOM.raNameInput.value.trim() || "RA");
+  session.raName = signedInName;
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
@@ -296,6 +311,7 @@ async function startSession() {
   live = newLiveLog();
   live.opennessStart = { alex: session.openness.alex, jordan: session.openness.jordan };
   updateTurnCounter();
+  updateProgress();
 
   DOM.raNameDisplay.textContent = session.raName;
   DOM.topicBadge.textContent = session.topic;
@@ -431,6 +447,7 @@ async function send() {
       DOM.chatLog.appendChild(planNoticeEl());
     }
     updateTurnCounter();
+    updateProgress(state);
     if (isTurnCapReached(session.turnCount, MAX_TURNS)) {
       // Input and Send stay locked. End & Debrief must stay enabled.
       DOM.chatLog.appendChild(sysEl("Turn limit reached. Click End & Debrief to finish."));

@@ -47,12 +47,14 @@
 
         <div class="form-stack">
           <div class="field">
-            <label for="ra-name">Your name</label>
-            <input type="text" id="ra-name" placeholder="Enter your name" />
+            <label for="situation-select">Situation</label>
+            <select id="situation-select">
+              <option value="roommate-conflict">Roommate Conflict</option>
+            </select>
           </div>
 
-          <div class="field">
-            <label for="topic-select">Situation</label>
+          <div class="field" id="concern-field">
+            <label for="topic-select">Concern</label>
             <select id="topic-select">
               <option value="noise">Noise Complaint</option>
               <option value="cleaning">Cleaning Dispute</option>
@@ -97,6 +99,10 @@
           <div class="toolbar-left">
             <span class="ra-label">RA:</span>
             <span id="ra-name-display" class="ra-name">You</span>
+          </div>
+          <div class="toolbar-progress">
+            <div id="progress-track" class="progress-track" role="progressbar" aria-label="Progress toward a plan" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-fill" class="progress-fill"></div></div>
+            <span id="progress-hint" class="progress-hint"></span>
           </div>
           <div class="toolbar-right">
             <button id="hint-btn" class="btn btn-small">Hint</button>
