@@ -10,7 +10,8 @@ import { RESIDENT_MODEL, allModelIds, modelConfig } from "./public/config.js";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
 import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
-import { createTtsProvider } from "./tts.mjs";
+import { createTtsProvider, createSttProvider } from "./tts.mjs";
+import { MAX_STT_BYTES } from "./public/config.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
@@ -84,8 +85,12 @@ console.log(`[startup] session saving: ${query ? "database mode (sessions table)
 let TTS = null;
 try { TTS = createTtsProvider(process.env.TTS_PROVIDER); } catch (e) { console.error("[config]", e.message, "- read-aloud is off"); }
 console.log(`[startup] voice: ${VOICE_ENABLED ? "enabled" : "off"}, read-aloud provider: ${TTS ? TTS.name : "off"}`);
+// STT_PROVIDER: environment only. Default is the stub (canned text), so a real provider must be set to hear anything real.
+let STT = null;
+try { STT = createSttProvider(process.env.STT_PROVIDER); } catch (e) { console.error("[config]", e.message, "- voice input is off"); }
+console.log(`[startup] voice input provider: ${STT ? STT.name : "off"}`);
 const routes = createApiRoutes({
-  tts: TTS,
+  tts: TTS, stt: STT,
   verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, voiceEnabled: VOICE_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
   userCallsPerHour: envNumber(process.env.USER_CALLS_PER_HOUR, 150),
   userSessionsPerDay: envNumber(process.env.USER_SESSIONS_PER_DAY, 10),
@@ -170,7 +175,8 @@ async function proxyToOpenRouter(reqBody) {
   return sendToOpenRouter(reqBody, { key: OPENROUTER_API_KEY, referer: ALLOWED_ORIGIN });
 }
 
-function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
+// Reads the whole body into memory as a Buffer, or answers 413 once it passes maxBytes. Nothing is written to disk.
+function readBuffer(req, res, onDone, maxBytes) {
   const chunks = [];
   let size = 0;
   let tooBig = false;
@@ -187,7 +193,11 @@ function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
   req.on("error", () => {
     if (!res.headersSent) sendJsonError(res, 400, "Request failed");
   });
-  req.on("end", () => { if (!tooBig) onDone(Buffer.concat(chunks).toString("utf-8")); });
+  req.on("end", () => { if (!tooBig) onDone(Buffer.concat(chunks)); });
+}
+
+function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
+  readBuffer(req, res, buf => onDone(buf.toString("utf-8")), maxBytes);
 }
 
 const server = http.createServer((req, res) => {
@@ -217,7 +227,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     if (origin !== undefined) {
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Clip-Seconds");
     }
     res.writeHead(204);
     res.end();
@@ -289,6 +299,21 @@ const server = http.createServer((req, res) => {
           if (!res.headersSent) sendJsonError(res, 500, "Request failed");
         });
     }, 4096);
+  }
+
+  if (pathname === "/api/stt") {
+    if (req.method !== "POST") return sendJsonError(res, 405, "Method not allowed");
+    if (!VOICE_ENABLED) return sendJsonError(res, 503, "Voice is turned off on this server.");
+    if (IS_PREVIEW) return sendJsonError(res, 503, "Voice input is turned off in pull request previews.");
+    if (refusedByRateLimit(req, res)) return;
+    return readBuffer(req, res, audio => {
+      routes.transcribe(req.headers, audio)
+        .then(r => sendRoute(res, r))
+        .catch(err => {
+          console.error("Route error: /api/stt", String(err && err.name || "Error")); // never the message
+          if (!res.headersSent) sendJsonError(res, 500, "Request failed");
+        });
+    }, MAX_STT_BYTES);
   }
 
   if (pathname === "/api/transcript" || pathname.startsWith("/api/sessions")) {

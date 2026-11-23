@@ -27,3 +27,18 @@ export function createTtsProvider(name) {
   }
   throw new Error(`Unknown TTS_PROVIDER "${n}"`);
 }
+
+// Speech to text for POST /api/stt. STT_PROVIDER: "stub" (the default), or off/none to turn it off.
+// A provider is { name, streaming, transcribe({ audio: Buffer, mime }) -> Promise<string> }. It must not keep the audio.
+// The real provider is added here later. streaming is false for the stub: words arrive after the clip, not while speaking.
+export function createSttProvider(name) {
+  const n = String(name ?? "stub").trim().toLowerCase() || "stub";
+  refuseRetired(n);
+  if (n === "none" || n === "off") return null;
+  if (n === "stub") {
+    // Remembers only how many bytes the last clip had, so a test can check it arrived. Never the audio.
+    const p = { name: "stub", streaming: false, lastSize: null, async transcribe({ audio }) { p.lastSize = audio.length; return "This is a stub transcript."; } };
+    return p;
+  }
+  throw new Error(`Unknown STT_PROVIDER "${n}"`);
+}

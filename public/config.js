@@ -72,6 +72,10 @@ export const DEFAULT_PRACTICE_MODE = "text";
 // These ids are placeholders until a real TTS provider is chosen (see tts.mjs).
 export const VOICE_IDS = { alex: "voice-alex", jordan: "voice-jordan" };
 export const MAX_TTS_CHARS = 600;
+// Push-to-talk. The server enforces the size cap and the declared length; the browser stops recording at the limit.
+export const MAX_STT_SECONDS = 30;
+export const MAX_STT_BYTES = 512 * 1024;
+export const STT_MIME_TYPES = ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"];
 
 // What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
 // Plain data, one entry per topic, so it can move into a scenario file later without changing shape.
