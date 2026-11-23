@@ -1,0 +1,66 @@
+{
+  "task": "grader",
+  "id": "grader-01",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "transcript": [
+    {
+      "sender": "Alex",
+      "text": "I'm Alex, a junior in biology. Jordan's music goes past midnight and I have a 7am lab. I'm exhausted."
+    },
+    {
+      "sender": "Jordan",
+      "text": "I'm Jordan, a sophomore. I have evening classes and study late. Alex expects silence at nine, which isn't realistic."
+    },
+    {
+      "sender": "RA",
+      "text": "Thanks for coming. I'm here to help you talk this through, and both of you will get a turn to speak."
+    },
+    {
+      "sender": "RA",
+      "text": "Alex, what has been going on for you at night?"
+    },
+    {
+      "sender": "Alex",
+      "text": "I can't fall asleep before one. I'm worried about my lab grade."
+    },
+    {
+      "sender": "RA",
+      "text": "It sounds like you're exhausted and worried about your 7am lab. Jordan, what is your evening like?"
+    },
+    {
+      "sender": "Jordan",
+      "text": "I get back at nine and need to study. It's the only quiet time I have."
+    },
+    {
+      "sender": "RA",
+      "text": "Jordan, it sounds like you need that time to study and feel pushed around. Alex, what did you hear Jordan say?"
+    },
+    {
+      "sender": "Alex",
+      "text": "That evenings are his only study time. I didn't know that."
+    },
+    {
+      "sender": "RA",
+      "text": "What could each of you try this week? Let's check in next Friday to see how it went."
+    }
+  ],
+  "correct": {
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": true,
+    "5": true,
+    "6": true,
+    "7": true,
+    "8": true,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": true,
+    "13": true,
+    "14": false,
+    "15": true
+  }
+}
