@@ -148,7 +148,19 @@ test("request bodies carry the app's resident settings and no provider field (th
   await run(deps);
   const first = deps.calls[0];
   assert.equal(first.max_tokens, 150);
+  assert.deepEqual(first.reasoning, { enabled: false });
   assert.equal(first.provider, undefined);
+});
+
+test("an empty reply names the finish reason", async () => {
+  const deps = fakeDeps();
+  const send = deps.send;
+  deps.send = async b => {
+    if (b.model !== "m/one" || b.messages[0].content.includes("Return JSON only")) return send(b);
+    return { status: 200, ok: true, data: { choices: [{ message: { content: null }, finish_reason: "length" }], usage: {} } };
+  };
+  const res = await run(deps);
+  assert.match(res.replies.find(r => r.model === "m/one").error, /finish_reason: length/);
 });
 
 test("bestModels keeps ties", () => {

@@ -16,6 +16,9 @@ import { BudgetError, safeWrite, costOf, SCENARIOS, DIFFICULTIES } from "./simul
 export const KINDS = ["opening", "venting", "blaming", "proposal", "pushback", "off_topic", "ra_mistake", "closing"];
 export const CRITERIA = ["voice", "consistency", "reaction", "does_not_do_the_RAs_job"];
 export const MISTAKES = ["breaks_character", "leaks_prompt", "solves_conflict_for_RA", "contradicts_facts"];
+// The app sends resident calls with no reasoning setting. Reasoning models such as Haiku then spend the whole
+// 150 token budget thinking and return nothing (finish_reason "length"), so the bench turns reasoning off for all models.
+export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } };
 export const LABELS = ["A", "B", "C", "D", "E"];
 
 // ---------- pure helpers (tested) ----------
@@ -222,7 +225,7 @@ export async function runBench({ moments, models, graders, auditGrader, maxCost,
     if (!r.ok || r.data?.error) throw new Error(`${model} HTTP ${r.status}: ${r.data?.error?.message || "request failed"}`);
     const content = r.data.choices?.[0]?.message?.content;
     const usd = spend(model, r.data.usage);
-    return { content: typeof content === "string" ? content.trim() : "", usage: r.data.usage || {}, usd };
+    return { content: typeof content === "string" ? content.trim() : "", finishReason: r.data.choices?.[0]?.finish_reason ?? null, usage: r.data.usage || {}, usd };
   };
 
   const result = { replies: [], gradings: [], audits: [], stopped: null };
@@ -235,8 +238,8 @@ export async function runBench({ moments, models, graders, auditGrader, maxCost,
       const rows = await Promise.all(models.map(async model => {
         const row = { momentId: m.id, model, raw: null, text: null, error: null, usage: null, usd: null };
         try {
-          const r = await request(model, [{ role: "system", content: prompt }], { maxTokens: TOKENS_RESIDENT });
-          if (!r.content) throw new Error("empty reply");
+          const r = await request(model, [{ role: "system", content: prompt }], RESIDENT_OPTS);
+          if (!r.content) throw new Error(`empty reply (finish_reason: ${r.finishReason})`);
           row.raw = r.content; row.text = cleanResponse(r.content); row.usage = r.usage; row.usd = r.usd;
         } catch (e) {
           if (e instanceof BudgetError) throw e;
