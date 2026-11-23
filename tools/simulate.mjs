@@ -199,6 +199,8 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     try {
       const r = await track("graders", g.id, [{ role: "system", content: prompt }], GRADER_OPTS);
       rec.raw = r.content; rec.finishReason = r.finishReason;
+      rec.completionTokens = r.usage?.completion_tokens ?? null; // saved so the token report can use real numbers
+      rec.reasoningTokens = r.usage?.completion_tokens_details?.reasoning_tokens ?? null;
       const parsed = parseRubricReply(r.content);
       if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
       const v = verifyEvidence(parsed.answers, session.turnHistory);
