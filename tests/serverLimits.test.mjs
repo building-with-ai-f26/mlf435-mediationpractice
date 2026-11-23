@@ -147,6 +147,29 @@ test("PUBLIC_ORIGIN: its origin and Host are accepted, a random origin is reject
   } finally { s.stop(); }
 });
 
+test("/api/tts and /api/practice-mode: signed out gets 401, wrong method 405, oversized body 413, shared IP limit 429", async () => {
+  const s = await start({ LIVE_AI_ENABLED: "true", VOICE_ENABLED: "true", TTS_PROVIDER: "stub", RATE_LIMIT_MAX: "3" });
+  try {
+    const ttsBody = { text: "hello", resident: "alex" };
+    assert.equal((await s.post("/api/tts", ttsBody)).status, 401);
+    assert.equal((await fetch(s.base + "/api/tts")).status, 405);
+    assert.equal((await fetch(s.base + "/api/practice-mode", { method: "POST" })).status, 405);
+    assert.equal((await s.post("/api/tts", { text: "a".repeat(5000), resident: "alex" })).status, 413);
+    assert.equal((await fetch(s.base + "/api/practice-mode", { method: "PUT", body: JSON.stringify({ mode: "voice" }) })).status, 401);
+    // Three counted calls above (405s are not counted). The fourth is refused by the per IP limit shared with /api/chat.
+    const res = await s.post("/api/tts", ttsBody);
+    assert.equal(res.status, 429);
+    assert.ok(Number(res.headers.get("retry-after")) >= 1);
+  } finally { s.stop(); }
+});
+
+test("/api/tts: 503 when live AI is off or read-aloud is not set up", async () => {
+  const off = await start({ VOICE_ENABLED: "true", TTS_PROVIDER: "stub" });
+  try { assert.equal((await off.post("/api/tts", { text: "hi", resident: "alex" })).status, 503); } finally { off.stop(); }
+  const none = await start({ LIVE_AI_ENABLED: "true", VOICE_ENABLED: "true" });
+  try { assert.equal((await none.post("/api/tts", { text: "hi", resident: "alex" })).status, 503); } finally { none.stop(); }
+});
+
 test("RESIDENT_MODEL: /config.json reports it, the default is Haiku, and it is allowed by the server", async () => {
   const d = await start();
   try {
@@ -158,4 +181,18 @@ test("RESIDENT_MODEL: /config.json reports it, the default is Haiku, and it is a
     const c = await (await fetch(s.base + "/config.json")).json();
     assert.equal(c.residentModel, "x-test/new-model");
   } finally { s.stop(); }
+});
+
+test("VOICE_ENABLED: off by default (config.json says false, /api/tts and /api/practice-mode return 503 before any login check), on when set", async () => {
+  const off = await start({ LIVE_AI_ENABLED: "true", TTS_PROVIDER: "stub" });
+  try {
+    assert.equal((await (await fetch(off.base + "/config.json")).json()).voiceEnabled, false);
+    assert.equal((await off.post("/api/tts", { text: "hi", resident: "alex" })).status, 503);
+    assert.equal((await fetch(off.base + "/api/practice-mode", { method: "PUT", body: JSON.stringify({ mode: "voice" }) })).status, 503);
+  } finally { off.stop(); }
+  const on = await start({ LIVE_AI_ENABLED: "true", TTS_PROVIDER: "stub", VOICE_ENABLED: "true" });
+  try {
+    assert.equal((await (await fetch(on.base + "/config.json")).json()).voiceEnabled, true);
+    assert.equal((await on.post("/api/tts", { text: "hi", resident: "alex" })).status, 401); // reaches the login check
+  } finally { on.stop(); }
 });

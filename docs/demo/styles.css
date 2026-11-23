@@ -314,6 +314,40 @@ body {
   font-size: 14px;
 }
 
+.toolbar-progress {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 var(--space-md);
+}
+.progress-track {
+  flex: 0 0 140px;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--navy-muted);
+  transition: width 0.4s ease;
+}
+.progress-hint {
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .toolbar-progress { flex-wrap: wrap; }
+  .progress-hint { white-space: normal; }
+}
+
 .ra-label { color: var(--muted); }
 .ra-name { font-weight: 700; color: var(--navy); }
 
@@ -620,7 +654,8 @@ body {
 
 @media (max-width: 760px) {
   .chat-view { flex-direction: column; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); }
+  /* Stacked layout: a sticky 100vh sidebar would sit over the chat and its buttons. */
+  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); position: static; height: auto; }
   .resident-cards { flex-direction: row; overflow-x: auto; }
   .resident-card { min-width: 260px; }
   .debrief-view { padding: var(--space-md); }
@@ -650,3 +685,36 @@ body {
   color: var(--muted);
 }
 .build-footer[hidden] { display: none; }
+
+/* Sign in */
+.signin-view {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--cream, #faf6ee);
+}
+.signin-view[hidden] { display: none; }
+.signin-view #google-button { display: flex; justify-content: center; margin-top: var(--space-md, 16px); }
+.signin-message { text-align: center; margin-top: var(--space-md, 16px); font-size: 0.9rem; }
+/* In normal page flow at the bottom, so it can never sit over the session controls. */
+.user-bar { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; padding: var(--space-sm) var(--space-md) 0; font-size: 12px; color: var(--muted); }
+.user-bar a { color: inherit; padding: 6px 4px; }
+.user-bar[hidden] { display: none; }
+.setup-notice { font-size: 0.85rem; margin: 0; }
+
+/* Practice mode and read-aloud */
+.practice-mode { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-sm); }
+.practice-mode legend { font-size: 0.9rem; font-weight: 600; padding: 0; margin-bottom: var(--space-xs); }
+.mode-option { display: flex; align-items: flex-start; gap: var(--space-sm); font-size: 0.95rem; cursor: pointer; }
+.mode-option input { margin-top: 4px; }
+.mode-option input:disabled + span { color: var(--muted); }
+.field-hint { font-size: 0.85rem; color: var(--muted); margin: 0; }
+.voice-bar { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--line); }
+.voice-note { font-size: 0.85rem; color: var(--muted); }
+.message .msg-head { display: flex; align-items: center; gap: var(--space-sm); }
+.message.ra .msg-head { align-self: flex-end; }
+.msg-controls { display: inline-flex; }
+.play-btn { font: inherit; font-size: 12px; padding: 2px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--navy); cursor: pointer; }
+.play-btn:hover:not(:disabled) { background: var(--wall); }
+.play-btn:disabled { color: var(--muted); cursor: default; }
+.play-btn:focus-visible, #mute-btn:focus-visible { outline: 2px solid var(--navy-muted); outline-offset: 2px; }
+.message.live .msg-body:empty::before { content: "..."; color: var(--muted); }

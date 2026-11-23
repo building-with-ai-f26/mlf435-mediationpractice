@@ -64,6 +64,14 @@ export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: REASONING };
 export const MAX_TURNS = 15;
 
+// Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
+// The mode never changes what is stored, graded or sent to the models.
+export const PRACTICE_MODES = ["text", "voice"];
+export const DEFAULT_PRACTICE_MODE = "text";
+// Read-aloud. One voice per resident. The server maps the resident to the id, so the browser never sends a voice id.
+// These ids are placeholders until a real TTS provider is chosen (see tts.mjs).
+export const VOICE_IDS = { alex: "voice-alex", jordan: "voice-jordan" };
+export const MAX_TTS_CHARS = 600;
 
 // What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
 // Plain data, one entry per topic, so it can move into a scenario file later without changing shape.
