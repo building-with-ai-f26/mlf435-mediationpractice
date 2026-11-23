@@ -11,7 +11,7 @@ import { redactRecord, exportFiles, parseArgs } from "../tools/export-live.mjs";
 const good = () => ({
   scenario: "noise", difficulty: "medium", partial: false,
   transcript: [{ turn: 0, role: "resident", sender: "Alex", text: "Hi" }, { turn: 1, role: "ra", sender: "RA", text: "Hello" }],
-  graders: [{ name: "DeepSeek", ok: true, answers: {}, metCount: 3 }], result: { met: 3, total: 15, score: 20 },
+  graders: [{ name: "Claude", ok: true, answers: {}, metCount: 3 }], result: { met: 3, total: 15, score: 20 },
   evil: "dropped",
 });
 

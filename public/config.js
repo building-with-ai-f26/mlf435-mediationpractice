@@ -6,9 +6,11 @@ import { startingOpenness } from "./logic.js";
 // Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
 export const MAIN_MODEL = "deepseek/deepseek-chat";
 export const GRADER_MODELS = [
-  { id: "deepseek/deepseek-chat", name: "DeepSeek" },
   { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  { id: "google/gemini-2.5-flash",     name: "Gemini" },
+  // Gemini 3.1 Flash Lite takes reasoning off. Gemini 3.6 Flash cannot (mandatory reasoning used up the 1500 token budget
+  // and grading failed in about 3 of 4 sessions), so it is not used.
+  { id: "google/gemini-3.1-flash-lite", name: "Gemini" },
+  { id: "openai/gpt-6-luna", name: "GPT" },
 ];
 export const TOKENS_RESIDENT = 150;
 export const TOKENS_GRADER = 1500;

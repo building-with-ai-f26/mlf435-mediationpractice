@@ -2,7 +2,7 @@
 import fs from "fs";
 
 const DRY = process.argv.includes("--dry");
-const MODELS = ["deepseek/deepseek-chat", "anthropic/claude-haiku-5.5", "google/gemini-2.5-flash"];
+const MODELS = ["anthropic/claude-haiku-5.5", "google/gemini-3.1-flash-lite", "openai/gpt-6-luna"];
 const SETTINGS = { a: { max_tokens: 600, temperature: 0.8 }, b: { max_tokens: 2000, temperature: 0 } };
 
 const key = (fs.existsSync(".env") && fs.readFileSync(".env", "utf-8").match(/^OPENROUTER_API_KEY=(.+)$/m)?.[1].trim()) || "";
