@@ -167,7 +167,7 @@ export function startingOpenness(difficulty) {
 // What the resident does at each level. Quoted by mediationPrompt, found by mock.js via OPENNESS_MARKER.
 export const OPENNESS_BANDS = [
   "guarded. Keep it short, defend your position, and do not brainstorm or suggest solutions.",
-  "a bit softer in tone. You may acknowledge the other person's point once, but you still hold your position.",
+  "a bit softer in tone and starting to trust the RA. You may acknowledge the other person's point, and you are willing to look at a fair plan, but you do not give up a must-have.",
   "explaining how this really affects you, and willing to consider options.",
   "ready to compromise. You may propose one small concrete step, but only agree to a plan after the RA asks what you would be willing to try.",
 ];
@@ -261,7 +261,10 @@ export function updateOpenness(state, tags, difficulty) {
     if (addressed.length === 1) { delta[other(addressed[0])] -= 1; lowered[other(addressed[0])] = true; }
   }
   if (tags.lectures) for (const r of addressed) { delta[r] -= 1; lowered[r] = true; }
-  if (tags.proposes_solution) for (const r of addressed) if (state[r] < 2) { delta[r] -= 1; lowered[r] = true; }
+  // A proposal only costs trust when the resident has none yet AND the RA is telling, not asking. A proposal that invites
+  // input ("does this work for you?") or comes after the RA earned any trust does not lower anyone.
+  const invites = tags.open_question || tags.invites_to_share;
+  if (tags.proposes_solution && !invites) for (const r of addressed) if (state[r] < OPEN_ENOUGH) { delta[r] -= 1; lowered[r] = true; }
 
   for (const r of ["alex", "jordan"]) {
     next[r] = clamp(state[r] + delta[r]);
@@ -294,7 +297,9 @@ export function proposalStanding(history, tags = []) {
   return standing;
 }
 
-const OPEN_ENOUGH = 2;
+// A resident at this openness or more may accept a plan that keeps their must-haves. 1 means "starting to trust the RA":
+// trust has to be earned (a resident at 0 never accepts) but it does not have to be complete.
+export const OPEN_ENOUGH = 1;
 
 // One of: "exploring", "proposal_pending", "accepted_by_one", "resolved".
 // exploring: no proposal is on the table. proposal_pending: one is, and fewer than one resident has accepted it
@@ -308,16 +313,29 @@ export function resolutionState(history, tags = [], openness = {}) {
   let start = T - 1;
   while (start > 0 && tags[start - 1]?.proposal_on_table) start -= 1;
 
-  const accepted = { alex: false, jordan: false };
+  // Each resident's replies since the plan came up, in order. A reply belongs to the RA message before it.
+  const replies = { alex: [], jordan: [] };
   let turn = -1;
-  const latest = {}; // resident -> { turn, text } of their most recent reply
   for (const h of history) {
     if (!isResidentName(h.sender)) { turn += 1; continue; }
-    if (turn >= 0) latest[h.sender.toLowerCase()] = { turn, text: h.text };
+    if (turn >= start) replies[h.sender.toLowerCase()].push({ turn, text: h.text });
   }
+  // A resident has accepted when they confirmed the plan and nothing since has taken it back. Taking it back is:
+  //  - a reply that is not a confirmation and hedges or asks something (an objection or a new ask), or
+  //  - a reply to an RA message that restated the plan with specifics, when the tagger says it now breaks their must-haves.
+  // A neutral reply ("see you Friday") keeps an earlier acceptance. A vague wrap-up message cannot void one either: the
+  // tagger's must-have verdict is only trusted on messages that actually state the plan.
+  const accepted = { alex: false, jordan: false };
   for (const r of ["alex", "jordan"]) {
-    const l = latest[r];
-    accepted[r] = !!l && l.turn >= start && !!tags[l.turn]?.meets_needs?.[r] && (openness[r] ?? 0) >= OPEN_ENOUGH && isConfirmation(l.text);
+    for (const { turn: t, text } of replies[r]) {
+      const g = tags[t];
+      if (!g) continue; // the tagger failed on this message: no evidence either way
+      const confirms = isConfirmation(text);
+      if (confirms && g.meets_needs?.[r]) accepted[r] = true;
+      else if (g.plan_has_specifics && !g.meets_needs?.[r]) accepted[r] = false;
+      else if (!confirms && (HEDGE.test(text) || text.includes("?"))) accepted[r] = false;
+    }
+    accepted[r] = accepted[r] && (openness[r] ?? 0) >= OPEN_ENOUGH;
   }
   const count = Number(accepted.alex) + Number(accepted.jordan);
   if (count === 1) return "accepted_by_one";
@@ -397,6 +415,10 @@ const COMMITMENT = [
   /\b(that|this|it|the plan|that plan|this plan|that idea|the idea)( \w+)? works (fine |well )?for me\b/i,
   /\bi'?m willing to (try|do|keep|stick)\b/i,
   /\bdeal\b/i,
+  /\bi can live with (that|this|it|the plan)\b/i,
+  /\bi'?m (good|fine|okay|ok|on board) with (that|this|it|the plan)\b/i,
+  /\bi agree (to|with) (that|this|it|the plan)\b/i,
+  /\bsounds good to me\b/i,
   /\byes,? i('|\s)?(ll|will)\b/i,
 ];
 // A concrete plan names a number, a time, or a specific action the speaker will take.
@@ -404,8 +426,10 @@ const CONCRETE = /\d|\b(tonight|tomorrow|today|week|weekend|weeknights?|night|ni
 
 // True only when a resident explicitly commits to a concrete plan.
 export function isConfirmation(text) {
-  const t = String(text || "").replace(/[\u2018\u2019]/g, "'");
-  if (t.includes("?")) return false;
+  // A question tacked onto an acceptance ("That works for me. Can you check in Friday?") does not void it, so only the
+  // statements are judged. A reply that only asks ("Does that work for me?") has no statement and is not an acceptance.
+  const t = String(text || "").replace(/[\u2018\u2019]/g, "'").split(/(?<=[.!?])\s+/).filter(s => !s.trim().endsWith("?")).join(" ");
+  if (!t) return false;
   if (HEDGE.test(t)) return false;
   if (!COMMITMENT.some(p => p.test(t))) return false;
   return CONCRETE.test(t);

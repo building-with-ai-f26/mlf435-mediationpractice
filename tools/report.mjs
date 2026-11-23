@@ -5,6 +5,7 @@ import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
 import { GRADER_MODELS } from "../public/config.js";
 import { RUBRIC, parseRubricReply, verifyEvidence } from "../public/rubric.js";
+import { OPEN_ENOUGH } from "../public/logic.js";
 
 export function loadRecords(dir, { includeDry = false } = {}) {
   const out = [];
@@ -57,6 +58,43 @@ export function resolutionByPersona(records, ids) {
     const turns = rs.filter(r => r.resolved && Number.isInteger(r.resolvedTurn)).map(r => r.resolvedTurn);
     return { persona: id, n: rs.length, resolved: rs.filter(r => r.resolved).length, meanTurn: turns.length ? turns.reduce((a, b) => a + b, 0) / turns.length : null, turns };
   }).filter(x => x.n > 0);
+}
+
+// Why a session did not reach a plan, from its last saved state. One label per unresolved session, most basic cause first.
+// Records without openness turns (older files) return null.
+export function planBlocker(rec) {
+  if (rec.resolved) return null;
+  const turns = rec.openness?.turns;
+  if (!Array.isArray(turns) || !turns.length) return null;
+  const tag = t => t.tags || {};
+  if (!turns.some(t => tag(t).proposal_on_table)) return "no plan was ever proposed";
+  const last = turns[turns.length - 1];
+  if (!tag(last).proposal_on_table) return "the plan was dropped before the end";
+  let start = turns.length - 1;
+  while (start > 0 && tag(turns[start - 1]).proposal_on_table) start -= 1;
+  const low = ["alex", "jordan"].filter(r => (last.openness_after?.[r] ?? 0) < OPEN_ENOUGH);
+  if (low.length) return `low trust: ${low.join(" and ")} never reached openness ${OPEN_ENOUGH}`;
+  const m = tag(last).meets_needs || {};
+  if (!m.alex || !m.jordan) return "the plan broke a must-have (or was changed) at the end";
+  if (!turns.slice(start).some(t => tag(t).plan_has_specifics)) return "the plan never had what, when and a check-in";
+  const replied = new Set(turns.slice(start).flatMap(t => t.responders || [t.speaker]).map(s => String(s).toLowerCase()));
+  if (!(replied.has("alex") && replied.has("jordan"))) return "only one resident answered the plan";
+  return "both answered but no clear acceptance (hedged, a question, or out of turns)";
+}
+
+// Plans reached by persona and difficulty, and the blockers behind the ones that were not.
+export function planCells(records) {
+  const cells = new Map();
+  for (const r of records) {
+    if (typeof r.resolved !== "boolean") continue;
+    const key = `${r.persona.id} / ${r.difficulty}`;
+    const c = cells.get(key) || { cell: key, n: 0, resolved: 0, turns: [], blockers: {} };
+    c.n += 1;
+    if (r.resolved) { c.resolved += 1; if (Number.isInteger(r.resolvedTurn)) c.turns.push(r.resolvedTurn); }
+    else { const b = planBlocker(r); if (b) c.blockers[b] = (c.blockers[b] || 0) + 1; }
+    cells.set(key, c);
+  }
+  return [...cells.values()];
 }
 
 // Share of sessions where each question was not met in the combined vote, overall and by persona.
@@ -119,7 +157,7 @@ export function buildReport(records) {
     const rs = records.filter(r => r.usage?.[role]);
     return [role, rs.length ? mean(rs.map(r => r.usage[role].reasoning_tokens || 0)) : null];
   }));
-  return { total: records.length, ids, reasoning, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null, byQuestion }, cost };
+  return { total: records.length, ids, reasoning, planCells: planCells(records), resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null, byQuestion }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -148,6 +186,13 @@ export function formatReport(rep) {
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
   }
   L.push("", "    Hidden reasoning tokens per session (billed as output): " + Object.entries(rep.reasoning).map(([k, v]) => `${k} ${v === null ? "n/a" : Math.round(v)}`).join(", "));
+  if (rep.planCells?.length) {
+    L.push("", "(i) Plans by persona and difficulty, and why the others did not get there");
+    for (const c of rep.planCells) {
+      L.push(`${c.cell.padEnd(28)} ${c.resolved} of ${c.n} resolved${c.turns.length ? " (turn " + c.turns.join(", ") + ")" : ""}`);
+      for (const [b, n] of Object.entries(c.blockers)) L.push(`    ${n}x ${b}`);
+    }
+  }
   if (rep.resolution?.length) {
     L.push("", "(h) Plans reached (both residents accepted a plan with specifics), by persona", "persona".padEnd(17) + "resolved".padEnd(10) + "turn(s)");
     for (const x of rep.resolution) L.push(x.persona.padEnd(17) + `${x.resolved} of ${x.n}`.padEnd(10) + (x.turns.length ? x.turns.join(", ") : "none"));

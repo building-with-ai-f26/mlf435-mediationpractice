@@ -35,7 +35,7 @@ test("token and turn constants keep their values", () => {
   assert.equal(TOKENS_RESIDENT, 150);
   assert.equal(TOKENS_GRADER, 1500);
   assert.deepEqual(GRADER_OPTS, { maxTokens: 1500, temperature: 0, reasoning: { enabled: false } });
-  assert.equal(MAX_TURNS, 10);
+  assert.equal(MAX_TURNS, 15);
 });
 
 test("createSession returns a fresh object with the starting fields each time", () => {

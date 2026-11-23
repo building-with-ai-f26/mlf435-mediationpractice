@@ -29,7 +29,7 @@ test("turn-count pressure text is gone at every turn", () => {
 test("each openness level adds its own band text", () => {
   const expected = [
     /OPENNESS 0 of 3.*guarded.*short.*defend.*do not brainstorm/,
-    /OPENNESS 1 of 3.*softer.*acknowledge the other person's point once/,
+    /OPENNESS 1 of 3.*softer.*starting to trust the RA.*look at a fair plan.*do not give up a must-have/,
     /OPENNESS 2 of 3.*explaining how this really affects you.*willing to consider options/,
     /OPENNESS 3 of 3.*compromise.*one small concrete step.*only agree to a plan after the RA asks what you would be willing to try/,
   ];

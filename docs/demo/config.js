@@ -59,7 +59,7 @@ export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
 export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: REASONING };
-export const MAX_TURNS = 10;
+export const MAX_TURNS = 15;
 
 // Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
 // The mode never changes what is stored, graded or sent to the models.

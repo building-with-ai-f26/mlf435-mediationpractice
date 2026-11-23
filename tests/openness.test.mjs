@@ -42,11 +42,18 @@ test("lectures lowers the addressed resident (both if addressed to both)", () =>
   assert.deepEqual(lv(updateOpenness(st(2, 2), tag({ addresses: "both", lectures: true }), "medium")), [1, 1]);
 });
 
-test("proposes_solution lowers a resident below 2, but not one at 2 or more", () => {
-  assert.deepEqual(lv(updateOpenness(st(1, 1), tag({ addresses: "alex", proposes_solution: true }), "medium")), [0, 1]);
+test("proposes_solution lowers a resident with no trust (0) when the RA is telling, not asking; anyone at 1 or more is safe", () => {
+  assert.deepEqual(lv(updateOpenness(st(0, 1), tag({ addresses: "alex", proposes_solution: true }), "medium")), [0, 1]);
+  assert.deepEqual(lv(updateOpenness(st(1, 1), tag({ addresses: "alex", proposes_solution: true }), "medium")), [1, 1]);
   assert.deepEqual(lv(updateOpenness(st(2, 3), tag({ addresses: "both", proposes_solution: true }), "medium")), [2, 3]);
-  assert.deepEqual(lv(updateOpenness(st(1, 2), tag({ addresses: "both", proposes_solution: true }), "medium")), [0, 2]);
+  // A proposal that invites input costs nothing, even at 0.
+  assert.deepEqual(lv(updateOpenness(st(1, 0), tag({ addresses: "both", proposes_solution: true, invites_to_share: true }), "medium")), [1, 0]);
+  // It still wipes half earned progress on hard when it does cost trust.
+  const s0 = { alex: 0, jordan: 0, progress: { alex: 1, jordan: 1 } };
+  assert.deepEqual(updateOpenness(s0, tag({ addresses: "alex", proposes_solution: true }), "hard").progress, { alex: 0, jordan: 1 });
+  assert.deepEqual(updateOpenness(s0, tag({ addresses: "alex", proposes_solution: true, open_question: true }), "hard").progress, { alex: 1, jordan: 1 });
 });
+
 
 test("a raise and a drop in the same turn add up", () => {
   assert.deepEqual(lv(updateOpenness(st(2, 2), tag({ addresses: "alex", reflective_listening: true, lectures: true }), "medium")), [2, 2]);
