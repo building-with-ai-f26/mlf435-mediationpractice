@@ -156,6 +156,18 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 - Version 4: the parser drops a leading `RA:` label from a quote (Claude copied it, so correct quotes failed the evidence check and its score collapsed; agreement with GPT 71% before, 83% after), and Grader 2 is Gemini 3.1 Flash Lite. `verifyEvidence` is unchanged. Scores from version 4 are not comparable with earlier versions. Stored sessions keep the `rubricVersion` they were saved with.
 - Persona ranges: `average` retuned to 3 to 7 for the new graders; the others held. Grader disagreement was 17.8% (80 of 450 questions) against 20.6% before.
 
+### Plan rate bar (how to judge "a plan can be reached")
+`node tools/report.mjs --dir <folder>` prints section (i). The bar for the strong-style personas (`strong`, `typo-good`, `nickname-both`, marked `expectsPlan` in `tools/personas.mjs`) is:
+- at least 75 percent of all their sessions reach a plan, and
+- no persona-and-difficulty cell is flagged. A cell is flagged only when it is under 50 percent over 8 or more sessions (several cycles), so a small cell cannot fail by bad luck.
+- Every other persona (hostile, side-taker, solution-pusher, minimal, injection, average, rushed-good) must never reach a plan. Any plan there is reported as a problem.
+
+Why not "every cell at least 2 of 3 in one cycle": with 9 cells and 3 runs each, even a system that resolves 76 percent of sessions passes that only about 19 percent of the time (measured: 1 pass in 4 cycles). It measured luck.
+
+### Future improvements
+- **Option A: the tagger checks plans against the must-haves.** Most unresolved strong sessions end with a plan that leaves out a limit a resident stated (for example the 11:30 end time for the study group) or changes one. Give the tagger each resident's must-haves as a written checklist, have it say which must-have a proposed plan misses, and let the RA see that. This attacks the cause of the remaining failures rather than how we count them.
+- **Option B: a stronger simulated RA** for plan-writing, since the weakest cells fail because the simulated RA's plan is incomplete.
+
 ## 9. Analytics (PostHog)
 - The PostHog snippet in `public/index.html` (and its copy in `docs/demo/`) uses the project key `phc_...`. This is a public, client-side key, so it is allowed in code.
 - Personal API keys (`phx_...`) and any other PostHog personal or secret key must never be committed or pasted into any file, and the app never uses one. The one exception is `tools/pull-posthog.mjs`, which reads `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` from the git-ignored `.env` (`.env.example` has them empty).
