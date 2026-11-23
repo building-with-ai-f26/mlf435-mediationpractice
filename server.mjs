@@ -10,6 +10,7 @@ import { RESIDENT_MODEL, allModelIds, modelConfig } from "./public/config.js";
 import { MAX_TRANSCRIPT_BYTES } from "./liveTranscript.mjs";
 import { readSetting, normalizeDatabaseUrl, createVerifier } from "./auth.mjs";
 import { createApiRoutes } from "./apiRoutes.mjs";
+import { createTtsProvider } from "./tts.mjs";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PRODUCTION = process.env.NODE_ENV === "production";
@@ -20,6 +21,8 @@ const ALLOWED_ORIGIN = PUBLIC_ORIGINS[0] || `http://localhost:${PORT}`;
 // Render sets IS_PULL_REQUEST to the string "true" on pull request previews. A preview never calls the AI or writes files.
 const IS_PREVIEW = envFlag(process.env.IS_PULL_REQUEST);
 const LIVE_AI_ENABLED = !IS_PREVIEW && envFlag(process.env.LIVE_AI_ENABLED);
+// Voice (read-aloud and the practice mode setting) is off unless VOICE_ENABLED is true. Environment only.
+const VOICE_ENABLED = envFlag(process.env.VOICE_ENABLED);
 const rateLimiter = createRateLimiter({
   max: envNumber(process.env.RATE_LIMIT_MAX, 60),
   windowMs: envNumber(process.env.RATE_LIMIT_WINDOW_MINUTES, 10) * 60 * 1000,
@@ -77,8 +80,13 @@ const query = DATABASE_URL
   : null;
 console.log(`[startup] resident model: ${RESIDENT_MODEL}`);
 console.log(`[startup] session saving: ${query ? "database mode (sessions table)" : "file mode (transcripts/live/)"}`);
+// TTS_PROVIDER: environment only. Empty means read-aloud is off. An unknown name also turns it off, with a log line.
+let TTS = null;
+try { TTS = createTtsProvider(process.env.TTS_PROVIDER); } catch (e) { console.error("[config]", e.message, "- read-aloud is off"); }
+console.log(`[startup] voice: ${VOICE_ENABLED ? "enabled" : "off"}, read-aloud provider: ${TTS ? TTS.name : "off"}`);
 const routes = createApiRoutes({
-  verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
+  tts: TTS,
+  verifyUser, query, dailyCap, liveAiEnabled: LIVE_AI_ENABLED, voiceEnabled: VOICE_ENABLED, key: OPENROUTER_API_KEY, gitCommit: GIT_COMMIT, liveDir: LIVE_DIR,
   userCallsPerHour: envNumber(process.env.USER_CALLS_PER_HOUR, 150),
   userSessionsPerDay: envNumber(process.env.USER_SESSIONS_PER_DAY, 10),
 });
@@ -208,7 +216,7 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "OPTIONS") {
     if (origin !== undefined) {
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     }
     res.writeHead(204);
@@ -224,7 +232,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === "/config.json" && (req.method === "GET" || req.method === "HEAD")) {
-    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID, ...modelConfig() }), "application/json");
+    return send(res, 200, JSON.stringify({ googleClientId: GOOGLE_CLIENT_ID, voiceEnabled: VOICE_ENABLED, ...modelConfig() }), "application/json");
   }
 
   if (pathname === "/api/chat") {
@@ -264,6 +272,23 @@ const server = http.createServer((req, res) => {
         }
       });
     });
+  }
+
+  if (pathname === "/api/tts" || pathname === "/api/practice-mode") {
+    const isTts = pathname === "/api/tts";
+    if (req.method !== (isTts ? "POST" : "PUT")) return sendJsonError(res, 405, "Method not allowed");
+    if (!VOICE_ENABLED) return sendJsonError(res, 503, "Voice is turned off on this server.");
+    if (IS_PREVIEW) return sendJsonError(res, 503, "Read-aloud is turned off in pull request previews.");
+    if (refusedByRateLimit(req, res)) return;
+    // Small bodies only: 600 characters of text fits well inside 4 KB.
+    return readBody(req, res, text => {
+      (isTts ? routes.speak(req.headers, text) : routes.setPracticeMode(req.headers, text))
+        .then(r => sendRoute(res, r))
+        .catch(err => {
+          console.error("Route error:", pathname, String(err && err.name || "Error")); // never the message: it could hold text
+          if (!res.headersSent) sendJsonError(res, 500, "Request failed");
+        });
+    }, 4096);
   }
 
   if (pathname === "/api/transcript" || pathname.startsWith("/api/sessions")) {
