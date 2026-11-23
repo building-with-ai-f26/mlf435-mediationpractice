@@ -12,19 +12,23 @@ import { validateChatBody, sendToOpenRouter, zdrEnabled } from "../chatBody.mjs"
 import { readSetting } from "../auth.mjs";
 import { BudgetError, safeWrite, costOf, SCENARIOS, DIFFICULTIES } from "./simulate.mjs";
 
-// EDIT THIS LIST to your 8 real kinds. Moments with any other kind are rejected.
-export const KINDS = ["opening", "venting", "blaming", "proposal", "pushback", "off_topic", "ra_mistake", "closing"];
+// The eight kinds of moment. Moments with any other kind are rejected. tools/makemoments.mjs writes these.
+export const KINDS = ["good_open_question", "correct_paraphrase", "wrong_paraphrase", "takes_a_side", "jumps_to_solution", "specific_plan", "rude_or_rushed", "off_script_or_injection"];
 export const CRITERIA = ["voice", "consistency", "reaction", "does_not_do_the_RAs_job"];
 export const MISTAKES = ["breaks_character", "leaks_prompt", "solves_conflict_for_RA", "contradicts_facts"];
+// Compared when --models is not given.
+export const DEFAULT_MODELS = ["anthropic/claude-haiku-5.5", "openai/gpt-6-luna", "deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"];
 export const LABELS = ["A", "B", "C", "D", "E"];
 
 // ---------- pure helpers (tested) ----------
 
 export function parseArgs(argv) {
   const a = {
-    models: [], moments: "moments", out: "out", maxCost: 1.0, dry: false, seed: null, auditReplies: 40,
-    graders: ["anthropic/claude-haiku-5.5", "meta-llama/llama-3.3-70b-instruct"],
-    auditGrader: "deepseek/deepseek-chat",
+    models: null, moments: "moments", out: "out", maxCost: 1.0, dry: false, seed: null, auditReplies: 40,
+    // Graders must come from vendors that are not being compared (DEFAULT_MODELS are anthropic, openai, deepseek), so nobody grades itself.
+    // These defaults have not been run through this bench yet.
+    graders: ["meta-llama/llama-3.3-70b-instruct", "google/gemini-3.1-flash-lite"],
+    auditGrader: "mistralai/mistral-small-3.2-24b-instruct",
   };
   for (let i = 0; i < argv.length; i++) {
     const f = argv[i];
@@ -42,6 +46,7 @@ export function parseArgs(argv) {
     else if (f === "--audit-replies") a.auditReplies = Number(v);
     else throw new Error(`Unknown flag ${f}`);
   }
+  a.models ||= [...DEFAULT_MODELS];
   if (a.models.length < 1 || a.models.length > LABELS.length) throw new Error(`--models needs 1 to ${LABELS.length} comma separated model ids`);
   if (new Set(a.models).size !== a.models.length) throw new Error("--models has a repeated id");
   if (a.graders.length !== 2) throw new Error("--graders needs exactly 2 model ids");
@@ -330,6 +335,7 @@ export function scoreboard(result, models) {
       serious_mistakes: flagged.size,
       cents_per_reply: done.length && costs.every(c => c !== null) ? Number((mean(costs) * 100).toFixed(3)) : null,
       cache_hits: hasCache ? cached : null,
+      reasoning_tokens: done.length ? Math.round(done.reduce((n, r) => n + (r.usage?.completion_tokens_details?.reasoning_tokens || 0), 0) / done.length) : null,
       replies: done.length,
       failed: replies.length - done.length,
     };

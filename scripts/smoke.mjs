@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Post-deploy smoke check. Usage: node scripts/smoke.mjs <base URL> [--commit <sha>]
 // Makes plain HTTP requests only. No key, no AI calls.
+import { RESIDENT_MODEL } from "../public/config.js";
 const args = process.argv.slice(2);
 const ci = args.indexOf("--commit");
 const commit = ci >= 0 ? args[ci + 1] : null;
@@ -33,7 +34,7 @@ try {
 
   const chat = await get("/api/chat", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "deepseek/deepseek-chat", messages: [{ role: "user", content: "smoke" }] }),
+    body: JSON.stringify({ model: RESIDENT_MODEL, messages: [{ role: "user", content: "smoke" }] }),
   });
   // The app has no login. Without a valid Origin and with live AI off it must not return 200.
   check("/api/chat without auth is rejected", chat.status >= 400, `status ${chat.status}`);

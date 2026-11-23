@@ -112,3 +112,19 @@ test("zdr refusal: the no endpoints error gets a clear message naming the model;
   assert.equal(zdrRefusalMessage("x/y", "Rate limited"), null);
   assert.equal(zdrRefusalMessage("x/y", undefined), null);
 });
+
+import { REASONING, REASONING_LOWEST } from "../public/config.js";
+import { buildRequestBody } from "../public/logic.js";
+import { buildOpenRouterBody } from "../chatBody.mjs";
+
+test("one reasoning setting: residents, router, tagger and graders all use it; only a model that cannot turn it off uses the lowest", () => {
+  assert.deepEqual(REASONING, { enabled: false });
+  for (const opts of [RESIDENT_OPTS, ROUTER_OPTS, TAGGER_OPTS, GRADER_OPTS]) assert.equal(opts.reasoning, REASONING);
+  assert.equal(graderOpts(GRADER_MODELS[0]).reasoning, REASONING);
+  assert.equal(graderOpts(GRADER_MODELS[2]).reasoning, REASONING);
+  assert.equal(graderOpts(GRADER_MODELS[1]).reasoning, REASONING_LOWEST);
+  // It reaches the request body, and the server adds zero data retention on top of it.
+  const body = buildOpenRouterBody(buildRequestBody("m/x", [{ role: "user", content: "hi" }], RESIDENT_OPTS), {});
+  assert.deepEqual(body.reasoning, { enabled: false });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: "deny" });
+});

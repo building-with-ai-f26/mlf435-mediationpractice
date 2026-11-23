@@ -6,7 +6,7 @@ This file records the security checks run on RA Practice Scenarios, what they fo
 
 An AI app with Google sign-in and a database:
 
-- **AI:** `/api/chat` forwards requests to OpenRouter (DeepSeek, Claude Haiku, Gemini Flash). The OpenRouter key stays on the server.
+- **AI:** `/api/chat` forwards requests to OpenRouter (Claude Haiku 5.5, Gemini 3.6 Flash, GPT-6 Luna by default; every model id is in `public/config.js`). The OpenRouter key stays on the server.
 - **Sign-in:** Google ID tokens are verified on the server by `auth.mjs` (RS256 signature, issuer, audience, expiry, optional domain). The user id is the token's `sub`.
 - **Database:** Neon Postgres, one `sessions` table (`migrations/0001_sessions.sql`). Every row has a `user_id`, and every query in `apiRoutes.mjs` is scoped to the signed in user.
 
@@ -104,6 +104,18 @@ Five attacks from `attack-log.md`:
 | Per-IP rate limit bypass with x-forwarded-for (medium) | Rotating the first forwarded entry with `RATE_LIMIT_MAX=3` locally | Limit bypassed | `TRUSTED_PROXY_HOPS`, entry taken from the right |
 
 The full log of 16 entries is in `attack-log.md`.
+
+### Voice (read-aloud and push-to-talk)
+
+Voice only works in Voice practice mode. What it sends and what it keeps:
+
+- **Read-aloud** (`POST /api/tts`): the text of one resident reply (at most 600 characters) goes to the text to speech provider. The server returns the audio and keeps nothing. The voice id comes from `public/config.js`, never from the request.
+- **Push-to-talk** (`POST /api/stt`): a clip of the RA's voice (at most 30 seconds and 512 KB) goes to the speech to text provider. The words come back to the browser so the RA can edit them before sending. The audio is held in memory for the request only: no file, no temp file, no log. Only the typed or edited text is ever part of a session.
+- **Microphone:** the browser asks for it only when the button is held, and releases it right after. A visible notice says the voice goes to a third party service and is not kept. Typing always works.
+- **Same protections as `/api/chat`:** per IP limit, Google sign-in, per user hourly limit and the daily cap, shared with chat. Both routes return 409 unless the user chose Voice mode (the mode is held on the server, in memory, per user). Both are off in pull request previews, and `/api/tts` is off unless `TTS_PROVIDER` is set.
+- **Providers:** `TTS_PROVIDER` is empty by default. `STT_PROVIDER` defaults to `stub`, which returns canned text, so a real provider must be set before anyone hears or sees anything real. OpenAI `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`, `gpt-realtime-mini` (retiring) and Gemini 3.1 Flash Live Preview (shut down) are refused by name in `tts.mjs`.
+- **Limits and risks:** the server cannot measure the length of an arbitrary audio file, so the size cap is the real length limit and `X-Clip-Seconds` is only checked, not trusted. The real providers have not been chosen or tested. Whether audio of a person's voice needs consent or counts as a biometric identifier is an open question for NYU (see `docs/model-choice.md`).
+- **Attack log:** rows 17 to 22 in `attack-log.md` cover signed-out calls, oversized text and clips, text mode and a forged voice id.
 
 ## 8. Rules, rollback and backups
 

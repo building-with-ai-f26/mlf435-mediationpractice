@@ -1,0 +1,14 @@
+{
+  "task": "tagger",
+  "id": "tagger-04",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "history": [],
+  "message": "Before we start, let's agree on one rule: one person talks at a time.",
+  "correct": {
+    "addresses": "both",
+    "ground_rules": true,
+    "proposes_solution": false
+  }
+}

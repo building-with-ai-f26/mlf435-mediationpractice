@@ -182,3 +182,20 @@ test("RESIDENT_MODEL: /config.json reports it, the default is Haiku, and it is a
     assert.equal(c.residentModel, "x-test/new-model");
   } finally { s.stop(); }
 });
+
+test("/api/stt: signed out 401, wrong method 405, oversized clip 413 before login, shared IP limit 429, 503 when off", async () => {
+  const s = await start({ LIVE_AI_ENABLED: "true", RATE_LIMIT_MAX: "3" });
+  try {
+    const headers = { "Content-Type": "audio/webm", "X-Clip-Seconds": "5" };
+    const post = body => fetch(s.base + "/api/stt", { method: "POST", headers, body });
+    assert.equal((await post(Buffer.alloc(1000))).status, 401);
+    assert.equal((await fetch(s.base + "/api/stt")).status, 405);
+    assert.equal((await post(Buffer.alloc(600 * 1024))).status, 413);
+    assert.equal((await post(Buffer.alloc(1000))).status, 401);
+    const res = await post(Buffer.alloc(1000));
+    assert.equal(res.status, 429);
+    assert.ok(Number(res.headers.get("retry-after")) >= 1);
+  } finally { s.stop(); }
+  const off = await start({ STT_PROVIDER: "off" });
+  try { assert.equal((await off.post("/api/stt", "x")).status, 503); } finally { off.stop(); }
+});

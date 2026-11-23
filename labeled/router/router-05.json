@@ -1,0 +1,17 @@
+{
+  "task": "router",
+  "id": "router-05",
+  "example": true,
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "I could do headphones."
+    },
+    {
+      "sender": "Jordan",
+      "text": "I could stop at eleven."
+    }
+  ],
+  "message": "What would each of you be willing to try this week?",
+  "correct": "BOTH"
+}

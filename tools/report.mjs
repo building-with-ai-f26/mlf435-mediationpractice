@@ -114,7 +114,12 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null, byQuestion }, cost };
+  // Hidden reasoning tokens per session, by role. These are billed as output, so they show up as cost even though nobody sees them.
+  const reasoning = Object.fromEntries(["residents", "tagger", "graders", "ra_sim"].map(role => {
+    const rs = records.filter(r => r.usage?.[role]);
+    return [role, rs.length ? mean(rs.map(r => r.usage[role].reasoning_tokens || 0)) : null];
+  }));
+  return { total: records.length, ids, reasoning, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null, byQuestion }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -142,6 +147,7 @@ export function formatReport(rep) {
     const name = role === "user_session" ? "user session (residents + graders, no ra_sim)" : role;
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
   }
+  L.push("", "    Hidden reasoning tokens per session (billed as output): " + Object.entries(rep.reasoning).map(([k, v]) => `${k} ${v === null ? "n/a" : Math.round(v)}`).join(", "));
   if (rep.resolution?.length) {
     L.push("", "(h) Plans reached (both residents accepted a plan with specifics), by persona", "persona".padEnd(17) + "resolved".padEnd(10) + "turn(s)");
     for (const x of rep.resolution) L.push(x.persona.padEnd(17) + `${x.resolved} of ${x.n}`.padEnd(10) + (x.turns.length ? x.turns.join(", ") : "none"));

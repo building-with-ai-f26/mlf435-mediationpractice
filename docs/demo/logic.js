@@ -325,6 +325,10 @@ export function resolutionState(history, tags = [], openness = {}) {
   return "proposal_pending";
 }
 
+// How a resident words an acceptance, so it reads as a real commitment: a plain "That works for me", what they will do and when,
+// no question and no "but". isConfirmation() looks for exactly this kind of reply.
+const ACCEPT_STYLE = `To accept, start with "That works for me." then say what you will do and when, in one or two short sentences, with no question and no "but".`;
+
 // The must-haves, the flexible items and what to do when a plan is on the table. Empty if the profile has none.
 function needsBlock(p, level, standing) {
   if (!p.mustHaves?.length) return "";
@@ -332,10 +336,10 @@ function needsBlock(p, level, standing) {
   let rule;
   if (level < OPEN_ENOUGH) {
     rule = "You are not ready to accept any plan yet, even a fair one. Stay guarded until the RA has made you feel heard.";
-  } else if (standing >= 2) {
-    rule = "A plan that keeps both your must-haves has now been on the table for two of your turns. You must either accept it in your own words (say what you will do and when) or name ONE specific must-have it fails. Do not repeat an objection you already made, and do not stall.";
+  } else if (standing >= 1) {
+    rule = `A plan that keeps both your must-haves was already on the table for your last turn. You must now either accept it or name ONE specific must-have it fails. Do not repeat an objection you already made, do not offer the same idea back to the RA, and do not stall. ${ACCEPT_STYLE}`;
   } else {
-    rule = "If a plan keeps both your must-haves, you may accept it once you feel heard, in your own words.";
+    rule = `If the RA's latest message lays out a plan that keeps both your must-haves, accept it now, once you feel heard. If it fails one, name that ONE must-have and nothing else. ${ACCEPT_STYLE}`;
   }
   return `
 WHAT YOU NEED:
@@ -390,7 +394,7 @@ export function commitReplies(session, raEntry, replies) {
 const HEDGE = /\b(but|however|although|i doubt|not sure|don'?t think|do not think|won'?t|unless|if only)\b/i;
 const COMMITMENT = [
   /\bi agree to\b/i,
-  /\bthat works for me\b/i,
+  /\b(that|this|it|the plan|that plan|this plan|that idea|the idea)( \w+)? works (fine |well )?for me\b/i,
   /\bi'?m willing to (try|do|keep|stick)\b/i,
   /\bdeal\b/i,
   /\byes,? i('|\s)?(ll|will)\b/i,

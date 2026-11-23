@@ -19,7 +19,7 @@ const dryDeps = (extra = {}) => ({ call: dryCall, prices: {}, now: fixedNow, ...
 const run = (persona, extra) => runOne({ scenario: "noise", difficulty: "medium", persona: PERSONAS.find(p => p.id === persona), raModel: "deepseek/deepseek-chat" }, dryDeps(extra));
 
 test("personas: ten of them with the required shape and table values", () => {
-  const table = { strong: [8, 12, 15], "rushed-good": [8, 6, 11], average: [8, 5, 9], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
+  const table = { strong: [10, 12, 15], "rushed-good": [8, 6, 11], average: [8, 5, 9], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
     assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "id", "maxTurns", "systemPrompt"]);
@@ -111,7 +111,10 @@ test("dry session: full record, persona turn limit wins, no secrets, no network"
   assert.equal(rec.cost.user_session.known, true);
   assert.doesNotMatch(JSON.stringify(rec), /sk-or-/);
   const strong = await run("strong");
-  assert.equal(strong.transcript.length, 2 + 8 * 2);
+  // Ten RA messages. A message to both roommates gets two replies, as in the app, so there are at least 10 replies.
+  assert.equal(strong.transcript.filter(t => t.sender === "Sam").length, 10);
+  assert.ok(strong.transcript.length >= 2 + 10 * 2);
+  assert.ok(strong.openness.turns.every(t => Array.isArray(t.responders) && t.responders.length >= 1));
 });
 
 test("a grader that returns junk is recorded as failed and the others still score", async () => {

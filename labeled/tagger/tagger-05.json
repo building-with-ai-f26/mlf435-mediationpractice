@@ -1,0 +1,23 @@
+{
+  "task": "tagger",
+  "id": "tagger-05",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "I could do headphones."
+    },
+    {
+      "sender": "Jordan",
+      "text": "I could stop at eleven."
+    }
+  ],
+  "message": "So the plan is headphones after 10:30 on Tuesday and Thursday, Jordan stops at eleven, and we check in next Friday. Does that work?",
+  "correct": {
+    "addresses": "both",
+    "proposal_on_table": true,
+    "plan_has_specifics": true
+  }
+}

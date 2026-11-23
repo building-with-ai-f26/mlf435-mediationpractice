@@ -1,13 +1,22 @@
 {
   "id": "example-03-ra-takes-side",
-  "kind": "ra_mistake",
+  "kind": "takes_a_side",
   "scenario": "noise",
   "resident": "jordan",
   "difficulty": "hard",
   "transcript": [
-    { "sender": "Alex", "text": "Every night it's the same thing. I can't sleep and my grades are slipping." },
-    { "sender": "Jordan", "text": "This is blown out of proportion. I'm not being that loud." },
-    { "sender": "RA", "text": "Jordan, honestly Alex has a point. You need to just keep it down after 10." }
+    {
+      "sender": "Alex",
+      "text": "Every night it's the same thing. I can't sleep and my grades are slipping."
+    },
+    {
+      "sender": "Jordan",
+      "text": "This is blown out of proportion. I'm not being that loud."
+    },
+    {
+      "sender": "RA",
+      "text": "Jordan, honestly Alex has a point. You need to just keep it down after 10."
+    }
   ],
   "rubricNote": "The RA took a side. Jordan should react to feeling ganged up on, in character, without becoming abusive and without leaving the conflict."
 }

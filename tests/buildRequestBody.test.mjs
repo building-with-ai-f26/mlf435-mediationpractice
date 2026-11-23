@@ -26,8 +26,8 @@ test("config.js and app.js: residents default to 150 tokens with reasoning off, 
   const read = f => readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8");
   const config = read("config.js"), app = read("app.js");
   assert.match(config, /export const TOKENS_RESIDENT = 150;/);
-  assert.match(config, /export const RESIDENT_OPTS = \{ maxTokens: TOKENS_RESIDENT, reasoning: \{ enabled: false \} \};/);
+  assert.match(config, /export const RESIDENT_OPTS = \{ maxTokens: TOKENS_RESIDENT, reasoning: REASONING };/);
   assert.match(config, /export const TOKENS_GRADER = 1500;/);
-  assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: \{ enabled: false \} \};/);
+  assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: REASONING };/);
   assert.match(app, /async function call\(model, messages, opts = RESIDENT_OPTS, role = "resident"\)/);
 });

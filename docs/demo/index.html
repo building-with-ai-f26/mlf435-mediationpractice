@@ -123,7 +123,13 @@
 
         <div id="chat-log" class="chat-log"></div>
 
+        <div id="mic-notice" class="mic-notice hidden">
+          <span id="mic-status" role="status">Hold the microphone button and speak, then edit the words before you send. You can always type instead.</span>
+          <span class="mic-privacy">The microphone is used only while you hold the button. Your voice is sent to a third party speech-to-text service and is not kept.</span>
+        </div>
+
         <div class="composer">
+          <button id="mic-btn" class="btn mic-btn hidden" type="button" aria-label="Hold to speak">Hold to speak</button>
           <input type="text" id="ra-input" placeholder="Type your response..." autocomplete="off" />
           <button id="send-btn" class="btn btn-primary">Send</button>
           <span id="turn-counter" class="turn-counter"></span>

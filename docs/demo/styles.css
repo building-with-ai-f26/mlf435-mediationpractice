@@ -684,3 +684,10 @@ body {
 .play-btn:disabled { color: var(--muted); cursor: default; }
 .play-btn:focus-visible, #mute-btn:focus-visible { outline: 2px solid var(--navy-muted); outline-offset: 2px; }
 .message.live .msg-body:empty::before { content: "..."; color: var(--muted); }
+
+/* Push-to-talk */
+.mic-notice { display: flex; flex-direction: column; gap: 2px; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+.mic-privacy { font-size: 0.8rem; }
+.mic-btn { white-space: nowrap; }
+.mic-btn.recording { background: var(--alex); color: #fff; border-color: var(--alex); }
+.mic-btn:focus-visible { outline: 2px solid var(--navy-muted); outline-offset: 2px; }

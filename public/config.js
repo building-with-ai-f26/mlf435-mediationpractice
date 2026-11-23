@@ -20,10 +20,14 @@ const env = name => (typeof process !== "undefined" ? process.env?.[name] : unde
 
 export let RESIDENT_MODEL = resolveResidentModel(env("RESIDENT_MODEL"));
 export function setResidentModel(value) { RESIDENT_MODEL = resolveResidentModel(value); }
+// One reasoning setting for residents, router, tagger and graders: off. A reasoning model (Haiku) otherwise spends the
+// whole token budget thinking and returns nothing. A model that cannot turn it off (Gemini 3.6 Flash) uses the lowest setting.
+export const REASONING = { enabled: false };
+export const REASONING_LOWEST = { effort: "low" };
 // Three graders from three vendors. Gemini cannot turn reasoning off, so its slot asks for low effort instead (see graderOpts).
 export const GRADER_MODELS = [
   { id: resolveModelId(env("GRADER_1_MODEL"), DEFAULT_GRADER_MODELS[0]), name: "Claude" },
-  { id: resolveModelId(env("GRADER_2_MODEL"), DEFAULT_GRADER_MODELS[1]), name: "Gemini", reasoning: { effort: "low" } },
+  { id: resolveModelId(env("GRADER_2_MODEL"), DEFAULT_GRADER_MODELS[1]), name: "Gemini", reasoning: REASONING_LOWEST },
   { id: resolveModelId(env("GRADER_3_MODEL"), DEFAULT_GRADER_MODELS[2]), name: "GPT" },
 ];
 export let TAGGER_MODEL = resolveModelId(env("TAGGER_MODEL"), DEFAULT_TAGGER_MODEL);
@@ -43,19 +47,18 @@ export const allModelIds = () => [...new Set([RESIDENT_MODEL, ...GRADER_MODELS.m
 export const modelConfig = () => ({ residentModel: RESIDENT_MODEL, graderModels: GRADER_MODELS.map(g => g.id), taggerModel: TAGGER_MODEL, routerModel: ROUTER_MODEL });
 
 export const TOKENS_RESIDENT = 150;
-// No hidden reasoning for residents: a reasoning model (Haiku) otherwise spends the whole 150 token budget thinking and returns nothing.
-export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: { enabled: false } };
+export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: REASONING };
 export const TOKENS_GRADER = 1500;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
-export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
+export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: REASONING };
 // Options for one grader: the shared ones, with the grader's own reasoning setting when it has one.
 export const graderOpts = g => (g.reasoning ? { ...GRADER_OPTS, reasoning: g.reasoning } : GRADER_OPTS);
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
 export const TOKENS_TAGGER = 220; // was 150: the tagger now also returns proposal_on_table, meets_needs and plan_has_specifics
-export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
+export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: REASONING };
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
 export const TOKENS_ROUTER = 30;
-export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
+export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: REASONING };
 export const MAX_TURNS = 10;
 
 // Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
@@ -66,6 +69,10 @@ export const DEFAULT_PRACTICE_MODE = "text";
 // These ids are placeholders until a real TTS provider is chosen (see tts.mjs).
 export const VOICE_IDS = { alex: "voice-alex", jordan: "voice-jordan" };
 export const MAX_TTS_CHARS = 600;
+// Push-to-talk. The server enforces the size cap and the declared length; the browser stops recording at the limit.
+export const MAX_STT_SECONDS = 30;
+export const MAX_STT_BYTES = 512 * 1024;
+export const STT_MIME_TYPES = ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"];
 
 // What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
 // Plain data, one entry per topic, so it can move into a scenario file later without changing shape.

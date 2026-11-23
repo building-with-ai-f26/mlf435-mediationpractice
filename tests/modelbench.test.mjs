@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseArgs, validateMoment, loadMoments, residentPrompt, parseGraderReply, buildGraderPrompt, makeRng, shuffle, runBench, scoreboard, auditMatch, bestModels, dryDeps, KINDS } from "../tools/modelbench.mjs";
+import { parseArgs, validateMoment, loadMoments, residentPrompt, parseGraderReply, buildGraderPrompt, makeRng, shuffle, runBench, scoreboard, auditMatch, bestModels, dryDeps, KINDS, DEFAULT_MODELS } from "../tools/modelbench.mjs";
 
 const moments = loadMoments(new URL("../moments", import.meta.url).pathname);
 const MODELS = ["m/one", "m/two", "m/three"];
@@ -48,7 +48,8 @@ test("parseArgs: models, two graders from different vendors, defaults", () => {
   const a = parseArgs(["--models", "x/a,y/b"]);
   assert.deepEqual(a.models, ["x/a", "y/b"]);
   assert.equal(a.graders.length, 2);
-  assert.throws(() => parseArgs([]), /--models/);
+  assert.deepEqual(parseArgs([]).models, DEFAULT_MODELS);
+  assert.deepEqual(DEFAULT_MODELS, ["anthropic/claude-haiku-5.5", "openai/gpt-6-luna", "deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"]);
   assert.throws(() => parseArgs(["--models", "a/1,b/2,c/3,d/4,e/5,f/6"]), /--models/);
   assert.throws(() => parseArgs(["--models", "x/a", "--graders", "g/1,g/2"]), /different vendors/);
   assert.throws(() => parseArgs(["--models", "x/a", "--bogus", "1"]), /Unknown flag/);

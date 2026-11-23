@@ -1,0 +1,21 @@
+{
+  "task": "tagger",
+  "id": "tagger-01",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "It's been really hard lately."
+    }
+  ],
+  "message": "Alex, what have the nights been like for you?",
+  "correct": {
+    "addresses": "alex",
+    "open_question": true,
+    "invites_to_share": true,
+    "proposes_solution": false,
+    "takes_side": false
+  }
+}

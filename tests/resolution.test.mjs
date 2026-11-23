@@ -173,21 +173,24 @@ test("prompt shows the speaker's must-haves and flexible items, and not the othe
   assert.match(p, /Never agree to a plan that breaks a must-have/);
 });
 
-test("after two turns with a fitting plan and openness 2 or more, the resident must accept or name ONE must-have", () => {
-  for (const level of [2, 3]) {
-    const p = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, level, "RA", 2);
-    assert.match(p, /must either accept it in your own words/);
-    assert.match(p, /name ONE specific must-have it fails/);
+test("after one turn with a fitting plan and openness 2 or more, the resident must accept or name ONE must-have", () => {
+  for (const level of [2, 3]) for (const standing of [1, 2]) {
+    const p = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, level, "RA", standing);
+    assert.match(p, /must now either accept it or name ONE specific must-have it fails/);
     assert.match(p, /Do not repeat an objection you already made/);
+    assert.match(p, /start with "That works for me\."/);
   }
 });
 
-test("the obligation is absent below two turns of standing, and below openness 2 the resident is not ready", () => {
-  const early = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 2, "RA", 1);
-  assert.doesNotMatch(early, /must either accept it/);
-  assert.match(early, /may accept it once you feel heard/);
+test("on the first reaction to a fitting plan the resident accepts it or names one must-have; below openness 2 the resident is not ready", () => {
+  const first = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 2, "RA", 0);
+  assert.doesNotMatch(first, /must now either accept/);
+  assert.match(first, /accept it now, once you feel heard/);
+  assert.match(first, /name that ONE must-have and nothing else/);
+  assert.match(first, /start with "That works for me\."/);
   const closed = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 1, "RA", 5);
-  assert.doesNotMatch(closed, /must either accept it/);
+  assert.doesNotMatch(closed, /must now either accept/);
+  assert.doesNotMatch(closed, /That works for me/);
   assert.match(closed, /not ready to accept any plan yet/);
 });
 
@@ -274,4 +277,14 @@ test("report: plans reached by persona, skipping records saved before resolution
   ];
   const r = resolutionByPersona(recs, ["strong", "hostile", "average"]);
   assert.deepEqual(r.map(x => [x.persona, x.n, x.resolved, x.meanTurn]), [["strong", 3, 2, 7], ["hostile", 1, 0, null]]);
+});
+
+import { isConfirmation } from "../public/logic.js";
+test("isConfirmation: 'that plan works for me' counts, a hedged or questioning or vague reply does not", () => {
+  assert.equal(isConfirmation("Sam, that plan works for me. Lights out by 10:30 on weeknights and I'll keep to it."), true);
+  assert.equal(isConfirmation("That works for me. I'll have the study group in the lounge until 11:30 on Tuesdays and Thursdays."), true);
+  assert.equal(isConfirmation("That plan works for me, but only if the group moves to the lounge on Tuesdays."), false); // hedge
+  assert.equal(isConfirmation("Does that plan work for me? I think so."), false);
+  assert.equal(isConfirmation("Sure, that works for me."), false); // nothing concrete
+  assert.equal(isConfirmation("The plan sounds fine, I guess."), false);
 });
