@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createApiRoutes } from "../apiRoutes.mjs";
 import { createDailyCap } from "../limits.mjs";
-import { createTtsProvider, STUB_AUDIO, isRetiredVoiceModel } from "../tts.mjs";
+import { createTtsProvider, STUB_AUDIO } from "../tts.mjs";
 import { VOICE_IDS, MAX_TTS_CHARS, PRACTICE_MODES, DEFAULT_PRACTICE_MODE } from "../public/config.js";
 import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText } from "../public/voice.js";
 
@@ -169,9 +169,32 @@ test("live view helpers: mode storage, text cap, pacing, reveal", () => {
   assert.equal(revealText("I hear you.  That is hard.", 1), "I hear you.  That is hard.");
 });
 
-test("retired voice models are refused by name and ordinary names are not", () => {
+// ---------- Voice input (POST /api/stt) ----------
+import fs from "node:fs";
+import { createSttProvider, isRetiredVoiceModel } from "../tts.mjs";
+import { MAX_STT_BYTES, MAX_STT_SECONDS } from "../public/config.js";
+
+function makeStt(over = {}) {
+  const logged = [];
+  const stt = createSttProvider("stub");
+  const routes = createApiRoutes({
+    verifyUser: async t => (t === "good" ? { id: "user-1" } : t === "other" ? { id: "user-2" } : null),
+    liveAiEnabled: true, voiceEnabled: true, stt, log: (...a) => logged.push(a.join(" ")), ...over,
+  });
+  return { routes, stt, logged };
+}
+const clip = (n = 1000) => Buffer.alloc(n, 1);
+const H = (over = {}) => ({ ...AUTH, "content-type": "audio/webm;codecs=opus", "x-clip-seconds": "5", ...over });
+
+test("STT_PROVIDER: stub by default, off/none turns it off, unknown throws, retired voice models are refused", () => {
+  assert.equal(createSttProvider(undefined).name, "stub");
+  assert.equal(createSttProvider("").name, "stub");
+  assert.equal(createSttProvider("off"), null);
+  assert.equal(createSttProvider("stub").streaming, false);
+  assert.throws(() => createSttProvider("mystery"), /Unknown STT_PROVIDER/);
   for (const bad of ["tts-1", "tts-1-hd", "openai/tts-1-hd", "gpt-4o-mini-tts", "gpt-realtime-mini", "gemini-3.1-flash-live-preview", "google/gemini-3.1-flash-live-preview"]) {
     assert.equal(isRetiredVoiceModel(bad), true, bad);
+    assert.throws(() => createSttProvider(bad), /retired voice model/, bad);
     assert.throws(() => createTtsProvider(bad), /retired voice model/, bad);
   }
   for (const fine of ["stub", "gpt-6-luna", "tts-2", "gemini-4-neon"]) assert.equal(isRetiredVoiceModel(fine), false, fine);
@@ -185,4 +208,84 @@ test("VOICE_ENABLED off (the default): speak and the practice mode route refuse 
   // Default of createApiRoutes is off too.
   const bare = createApiRoutes({ verifyUser: async () => ({ id: "u" }), liveAiEnabled: true, tts });
   assert.equal((await bare.speak(AUTH, j({ text: "hi", resident: "alex" }))).status, 503);
+});
+
+test("/api/stt: signed out and forged tokens get 401, before the audio is looked at", async () => {
+  const { routes, stt } = makeStt();
+  assert.equal((await routes.transcribe({ "content-type": "audio/webm", "x-clip-seconds": "5" }, clip())).status, 401);
+  assert.equal((await routes.transcribe(H({ authorization: "Bearer nope" }), clip())).status, 401);
+  assert.equal(stt.lastSize, null);
+});
+
+test("/api/stt: 409 in text mode, 200 with the transcript in voice mode, per user", async () => {
+  const { routes, stt } = makeStt();
+  assert.equal((await routes.transcribe(H(), clip())).status, 409);
+  await routes.setPracticeMode(AUTH, j({ mode: "voice" }));
+  const r = await routes.transcribe(H(), clip(2000));
+  assert.equal(r.status, 200);
+  assert.equal(typeof r.body.text, "string");
+  assert.equal(stt.lastSize, 2000);
+  assert.equal((await routes.transcribe(H({ authorization: "Bearer other" }), clip())).status, 409);
+});
+
+test("/api/stt: oversized clip 413, too long 400, bad type 415, missing or bad length 400, empty 400", async () => {
+  const { routes, stt } = makeStt();
+  await routes.setPracticeMode(AUTH, j({ mode: "voice" }));
+  assert.equal((await routes.transcribe(H(), clip(MAX_STT_BYTES + 1))).status, 413);
+  assert.equal(stt.lastSize, null); // refused before the provider
+  assert.equal((await routes.transcribe(H(), clip(MAX_STT_BYTES))).status, 200); // exactly the cap is fine
+  assert.equal((await routes.transcribe(H({ "x-clip-seconds": String(MAX_STT_SECONDS + 1) }), clip())).status, 400);
+  assert.equal((await routes.transcribe(H({ "x-clip-seconds": String(MAX_STT_SECONDS) }), clip())).status, 200);
+  assert.equal((await routes.transcribe(H({ "x-clip-seconds": undefined }), clip())).status, 400);
+  assert.equal((await routes.transcribe(H({ "x-clip-seconds": "abc" }), clip())).status, 400);
+  assert.equal((await routes.transcribe(H({ "x-clip-seconds": "0" }), clip())).status, 400);
+  assert.equal((await routes.transcribe(H({ "content-type": "text/html" }), clip())).status, 415);
+  assert.equal((await routes.transcribe(H(), Buffer.alloc(0))).status, 400);
+  assert.equal((await routes.transcribe(H(), "not a buffer")).status, 400);
+});
+
+test("/api/stt: shares the hourly limit and the daily cap with chat; invalid clips do not use the cap", async () => {
+  const a = makeStt({ userCallsPerHour: 2 });
+  await a.routes.setPracticeMode(AUTH, j({ mode: "voice" }));
+  assert.equal(await a.routes.guardChat(AUTH), null);
+  assert.equal((await a.routes.transcribe(H(), clip())).status, 200);
+  const r = await a.routes.transcribe(H(), clip());
+  assert.equal(r.status, 429);
+  assert.ok(Number(r.headers["Retry-After"]) >= 1);
+
+  const cap = createDailyCap(1);
+  const b = makeStt({ dailyCap: cap });
+  await b.routes.setPracticeMode(AUTH, j({ mode: "voice" }));
+  await b.routes.transcribe(H(), clip(MAX_STT_BYTES + 1)); // refused, not counted
+  await b.routes.transcribe({ "content-type": "audio/webm", "x-clip-seconds": "5" }, clip()); // signed out, not counted
+  assert.equal(cap.reached(), false);
+  assert.equal((await b.routes.transcribe(H(), clip())).status, 200);
+  assert.equal((await b.routes.transcribe(H(), clip())).status, 503);
+});
+
+test("/api/stt: 503 when live AI is off or the provider is off; a provider failure gives 502 and logs only the name", async () => {
+  assert.equal((await makeStt({ liveAiEnabled: false }).routes.transcribe(H(), clip())).status, 503);
+  assert.equal((await makeStt({ stt: null }).routes.transcribe(H(), clip())).status, 503);
+  const stt = { name: "x", streaming: false, transcribe: async () => { throw new Error("secret words from provider"); } };
+  const { routes, logged } = makeStt({ stt });
+  await routes.setPracticeMode(AUTH, j({ mode: "voice" }));
+  assert.equal((await routes.transcribe(H(), clip())).status, 502);
+  assert.deepEqual(logged, ["[stt-failed] Error"]);
+});
+
+test("audio is never kept: the stub keeps only a byte count and the route code never writes files", () => {
+  const p = createSttProvider("stub");
+  assert.deepEqual(Object.keys(p).sort(), ["lastSize", "name", "streaming", "transcribe"]);
+  const src = fs.readFileSync(new URL("../apiRoutes.mjs", import.meta.url), "utf8");
+  const stt = src.slice(src.indexOf("async function transcribe"), src.indexOf("return { authenticate"));
+  assert.doesNotMatch(stt, /writeFile|createWriteStream|appendFile|tmpdir|mkdtemp|fs\./);
+  const server = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  const reader = server.slice(server.indexOf("function readBuffer"), server.indexOf("function readBody"));
+  assert.doesNotMatch(reader, /writeFile|createWriteStream|tmpdir|mkdtemp/);
+});
+
+test("VOICE_ENABLED off: /api/stt refuses with 503 before looking at the audio", async () => {
+  const { routes, stt } = makeStt({ voiceEnabled: false });
+  assert.equal((await routes.transcribe(H(), clip())).status, 503);
+  assert.equal(stt.lastSize, null);
 });
