@@ -1,0 +1,17 @@
+{
+  "task": "router",
+  "id": "router-03",
+  "example": true,
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "It's not fair."
+    },
+    {
+      "sender": "Jordan",
+      "text": "Neither is this."
+    }
+  ],
+  "message": "Let's each take a minute to say what you need from the other.",
+  "correct": "BOTH"
+}

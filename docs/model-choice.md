@@ -1,19 +1,21 @@
 # Model choice
 
-Written 2026-11-23. Prices and zero retention listings were read from OpenRouter on that date (`/api/v1/models` and `/api/v1/endpoints/zdr`). This file is built up over several changes: models and privacy first (below), then the grader token budget, and more as later changes land.
+Written 2026-11-23. Prices and zero retention listings were read from OpenRouter on that date (`/api/v1/models` and `/api/v1/endpoints/zdr`). Nothing here is a quality result: no model comparison on real moments has been run yet.
 
 ## Models in use
 
 | Role | Model | Where it is set |
 |---|---|---|
-| Residents (Alex, Jordan) | `anthropic/claude-haiku-5.5` (replaced `deepseek/deepseek-chat`) | `RESIDENT_MODEL` in `public/config.js`, env `RESIDENT_MODEL` |
+| Residents (Alex, Jordan) | `anthropic/claude-haiku-5.5` | `RESIDENT_MODEL` in `public/config.js` |
 | Router | `anthropic/claude-haiku-5.5` | `ROUTER_MODEL` |
 | Tagger | `anthropic/claude-haiku-5.5` | `TAGGER_MODEL` |
 | Grader 1 "Claude" | `anthropic/claude-haiku-5.5` | `GRADER_1_MODEL` |
-| Grader 2 "Gemini" | `google/gemini-3.1-flash-lite` | `GRADER_2_MODEL` |
+| Grader 2 "Gemini" | `google/gemini-3.1-flash-lite` (was `google/gemini-3.6-flash`, see "Grader 2" below) | `GRADER_2_MODEL` |
 | Grader 3 "GPT" | `openai/gpt-6-luna` | `GRADER_3_MODEL` |
 
-All model ids are named values in `public/config.js`, each overridable by an environment variable. The server builds its allowlist from them and tells the browser the ids in `/config.json`. The server adds `provider: {zdr: true, data_collection: "deny"}` to every OpenRouter call (`OPENROUTER_ZDR=false` switches it off for one test), and nothing falls back to another model: an OpenRouter "No endpoints found" error fails the call with a clear message and a `[zdr]` log line. Reasoning is off for residents, router, tagger and graders from one config value (`REASONING`).
+Grader 1 and Grader 3 are the builder's provisional picks. Grader 2 was changed on 2026-11-23 after a live test (below).
+
+Candidates for the resident comparison in `tools/modelbench.mjs` (the default `--models`): `anthropic/claude-haiku-5.5`, `openai/gpt-6-luna`, `deepseek/deepseek-v4.1-flash`, `anthropic/claude-sonnet-5.5`.
 
 ## Prices (USD per million tokens, input / output)
 
@@ -21,32 +23,41 @@ All model ids are named values in `public/config.js`, each overridable by an env
 |---|---|---|
 | `anthropic/claude-haiku-5.5` | 0.10 | 0.50 |
 | `openai/gpt-6-luna` | 0.10 | 0.50 |
-| `google/gemini-3.1-flash-lite` | 0.25 | 1.50 |
 | `deepseek/deepseek-v4.1-flash` | 0.0498 | 0.1992 |
 | `anthropic/claude-sonnet-5.5` | 2.00 | 10.00 |
-| `google/gemini-3.6-flash` (retired as a grader) | 0.75 | 3.75 |
+| `google/gemini-3.6-flash` | 0.75 | 3.75 |
+| `google/gemini-3.1-flash-lite` | 0.25 | 1.50 |
 | `meta-llama/llama-3.3-70b-instruct` | 0.71 | 0.71 |
-| `deepseek/deepseek-chat` (the old resident) | 0.2574 | 1.0287 |
+| `deepseek/deepseek-chat` (the old resident and Grader 1) | 0.2574 | 1.0287 |
 
-Measured with Haiku 5.5 residents (9 simulated sessions): about $0.005 per user session and about $0.00025 per call. `DAILY_CALL_CAP` counts calls, so 500 calls a day is about $0.13 (a simulation, not real use).
+Measured with Haiku 5.5 residents and the older graders (9 simulated sessions, 2026-11-23): about $0.0050 per user session and about $0.00025 per call. `DAILY_CALL_CAP` counts calls, so 500 calls a day is about $0.13. These are simulated sessions, not real use.
 
 ## Zero retention results
 
-"Listed" means the model has an endpoint on OpenRouter's zero data retention list (a listing only). "Live request" means a real request with zdr on was sent and answered (`node tools/zdrcheck.mjs`, 2026-11-23).
+Two separate checks. "Listed" means the model has at least one endpoint on OpenRouter's zero data retention list (a listing only, no request sent). "Live request" means a real request with `provider: {zdr: true, data_collection: "deny"}` was sent and answered.
 
-| Model | Listed | Live request with zdr on | Safety retention flag in the listing |
+| Model | Listed | Live request with ZDR on | Safety retention flag in the listing |
 |---|---|---|---|
-| `anthropic/claude-haiku-5.5` | yes | ok | false |
-| `google/gemini-3.1-flash-lite` | yes | ok | **true** |
-| `openai/gpt-6-luna` | yes | ok (one earlier call was rate limited upstream, then ok) | false |
-| `google/gemini-3.6-flash` | yes | ok for a short reply; cannot grade (see below) | **true** |
-| `meta-llama/llama-3.3-70b-instruct` | yes | ok (earlier test, older code path) | false |
-| `deepseek/deepseek-chat` | yes | ok (earlier test, older code path) | false |
-| `deepseek/deepseek-v4.1-flash` | yes | not tested | false for most endpoints, **true** for one Google endpoint |
+| `anthropic/claude-haiku-5.5` | yes | ok (2026-11-23) | false |
+| `openai/gpt-6-luna` | yes | ok (2026-11-23) | false |
+| `google/gemini-3.6-flash` | yes | ok for a 20 token reply; real grading unreliable, see "Grader 2" | **true** |
+| `google/gemini-3.1-flash-lite` | yes | ok, including 104 real grading prompts (2026-11-23) | **true** |
+| `meta-llama/llama-3.3-70b-instruct` | yes | ok (2026-11-23) | false |
+| `deepseek/deepseek-chat` | yes | ok (2026-11-23) | false |
+| `deepseek/deepseek-v4.1-flash` | yes | not tested | false for most endpoints, **true** for the Google endpoint |
 | `anthropic/claude-sonnet-5.5` | yes | not tested | false |
 
-Not tested at all: any voice vendor, any other model.
+Not tested at all: any other model, any voice (speech to text or text to speech) vendor, and the browser against a live server with the new settings.
 
+## Grader 2 and the score problems (2026-11-23)
+
+**Gemini 3.6 Flash could not grade.** Its reasoning is mandatory, so on the real 15 question prompt it spent about 1,440 of the 1,500 output tokens thinking (the grader budget was 1,500 then; it is 2,000 now, see "Grader token budget") and was cut off. It failed to finish in 90 of 118 simulated sessions. Lowering the effort or capping reasoning did not help, and one of two calls passed at a 2,000 token limit. When it did finish it agreed with GPT on 88% of questions.
+
+**Decision (builder, 2026-11-23):** switch Grader 2 to `google/gemini-3.1-flash-lite`, which accepts reasoning off, instead of raising token limits. In a live check it read correctly on 14 of 14 saved transcripts, and then on all 90 grader replies in a 30 session run. It agreed with GPT on 78% of questions in the 14 transcript test. It costs $0.25 in and $1.50 out per million tokens. Same vendor, so there are still three vendors. Google's listing carries `safety_retention: true` for both Gemini models (open question 4 below).
+
+**Claude collapsed to all NO in about 19% of sessions (22 of 118).** Cause: Claude often copied the transcript's `RA:` label into its quote, so correct quotes failed the evidence check (`verifyEvidence`, unchanged). The parser now drops a leading `RA:` label (`RUBRIC_VERSION` 4). Offline replay of the saved replies: agreement with GPT rose from 71% to 83% and 21 of the 22 collapses recovered. A second, smaller collapse remains (Claude answers NO to everything for a weak but not bad RA, about 1 in 10 sessions). Turning Claude's reasoning on uses all 1,500 tokens (every reply cut off), and two small prompt wordings did not help beyond noise, so nothing was changed. With three usable graders and 2 of 3 needed, one collapsed grader no longer lowers a score.
+
+**Result:** 30 sessions (10 personas, 3 runs, medium): all grader replies readable, every persona mean inside its expected range, with the `average` range retuned to 3 to 7 because the new graders are stricter than the old ones. Grader disagreement (questions where the three graders did not all agree) was 17.8% (80 of 450), against the earlier 20.6%; it is highest on Q11, Q12 and Q13 (33% to 47%).
 
 ## Stage 4 gate: resident model change (2026-11-23)
 
@@ -81,3 +92,24 @@ For `google/gemini-3.6-flash` the visible text is short only because its hidden 
 **Choice:** a call from a current grader (`openai/gpt-6-luna`) was cut off, so by the rule the budget is now **2000** (was 1500). It is one value, `TOKENS_GRADER`, and 2000 is also the server's cap on `max_tokens` (`MAX_TOKENS_CAP` in `chatBody.mjs`), so no other limit changes. Typical calls use a fifth of it or less, so cost is unchanged except for rare long replies. Reasoning stays off.
 
 **Caveat:** most numbers are estimates, and one cut-off call in 187 may be a one-off. Rerun section (j) once new sessions with real token counts have been saved; if the 95th percentile stays far below 1100 and nothing is cut off, 1500 could be restored.
+
+## Decision rule (proposed, for the builder to confirm)
+
+Not given yet, so this is a proposal. A model is chosen for a role when all of these hold:
+
+1. It exists on OpenRouter and has a zero retention route, shown by a listing and by a live request with zdr on.
+2. On the 40 moments (`tools/modelbench.mjs`), blind scores from two graders of other vendors show no serious mistakes (breaks character, leaks the prompt, solves the conflict for the RA, contradicts facts).
+3. Its mean score is within 0.2 of the best model, or better.
+4. Of the models that pass 2 and 3, the one with the lowest cents per reply wins.
+5. For the router and tagger: agreement with the labeled cases (`tools/classifybench.mjs`) of at least 90%. For graders: question by question agreement with the hand scored sessions of at least 85%, and a usable reply in at least 95% of sessions.
+6. Anything not tested stays marked "not tested" here and is not chosen on price alone.
+
+The thresholds in 3 and 5 are guesses until real results exist.
+
+## Open questions for NYU
+
+1. **Education records.** Do saved practice sessions, or the Google sign-in identity attached to them, count as education records? The scenarios are fictional, but the RA's typed words and account id are stored. Who may see them, and how long may they be kept?
+2. **Voice vendors.** Which speech to text and text to speech vendors are approved? What do they retain, do they train on audio, who are their sub-processors, and is a voice recording a biometric identifier under the rules that apply? What notice and consent are needed before a microphone is used? Voice models that must not be used: OpenAI `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` and `gpt-realtime-mini` (retiring) and Gemini 3.1 Flash Live Preview (shut down).
+3. **DeepSeek.** Is a DeepSeek model acceptable at all, even on a US hosted zero retention endpoint? It is only a candidate in the bench and the default simulated RA, not a live role.
+4. **Google safety retention.** OpenRouter's listing flags Google's Gemini endpoints with `safety_retention: true`, meaning content may be kept for safety review even on the zero retention route. Is that acceptable for Grader 2 (now Gemini 3.1 Flash Lite), or must Google models be excluded?
+5. Is zero retention on the provider side enough, given that OpenRouter itself sits in the middle?

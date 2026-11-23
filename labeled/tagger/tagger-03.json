@@ -1,0 +1,24 @@
+{
+  "task": "tagger",
+  "id": "tagger-03",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "He is so loud."
+    },
+    {
+      "sender": "Jordan",
+      "text": "I'm not that loud."
+    }
+  ],
+  "message": "Jordan, you're being unreasonable. Alex is right, just keep it down after ten.",
+  "correct": {
+    "addresses": "jordan",
+    "takes_side": true,
+    "lectures": true,
+    "proposes_solution": true
+  }
+}
