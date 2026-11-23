@@ -1,0 +1,20 @@
+{
+  "task": "tagger",
+  "id": "tagger-02",
+  "example": true,
+  "scenario": "noise",
+  "difficulty": "medium",
+  "history": [
+    {
+      "sender": "Alex",
+      "text": "I'm exhausted and nobody listens to me."
+    }
+  ],
+  "message": "It sounds like you're exhausted and feel unheard, Alex.",
+  "correct": {
+    "addresses": "alex",
+    "reflective_listening": true,
+    "validates_feeling": true,
+    "open_question": false
+  }
+}
