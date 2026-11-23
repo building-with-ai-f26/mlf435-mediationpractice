@@ -1,6 +1,6 @@
 import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
-import { RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
 import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText, createLiveLine } from "./voice.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
@@ -152,7 +152,7 @@ const DOM = {
   debriefDifficulty: $("debrief-difficulty"),
   graderCards: $("grader-cards"), consolidated: $("consolidated-content"),
   restartBtn: $("restart-btn"), turnCounter: $("turn-counter"),
-  modeText: $("mode-text"), modeVoice: $("mode-voice"), voiceHint: $("voice-hint"), voiceBar: $("voice-bar"), muteBtn: $("mute-btn"),
+  modeText: $("mode-text"), modeVoice: $("mode-voice"), voiceHint: $("voice-hint"), voiceBar: $("voice-bar"), muteBtn: $("mute-btn"), micBtn: $("mic-btn"), micNotice: $("mic-notice"), micStatus: $("mic-status"),
 };
 
 // Practice mode setting: remembered between sessions, Text the first time. Voice needs the live server.
@@ -294,6 +294,85 @@ async function showResident(sender, text, resident) {
   return line.el;
 }
 
+/* ----- Push-to-talk (voice mode only) -----
+   Hold the button, speak, release. The clip goes to /api/stt once and the words land in the input box, where the RA
+   can edit them before sending. What is sent and stored is the text in the box. Typing always works.
+   The provider does not stream yet, so words appear after the clip. setDraft() is the one place a streaming provider
+   would call as partial words arrive. Audio lives only in memory here: it is never saved or kept after the request. */
+const micAvailable = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
+const mic = { recorder: null, stream: null, chunks: [], startedAt: 0, timer: 0, busy: false };
+
+function setMicStatus(text) { DOM.micStatus.textContent = text; }
+function setDraft(text) { DOM.raInput.value = text; DOM.raInput.focus(); }
+
+function releaseMic() {
+  clearTimeout(mic.timer);
+  mic.stream?.getTracks().forEach(t => t.stop()); // the microphone light goes off
+  mic.stream = null; mic.recorder = null; mic.chunks = [];
+  DOM.micBtn.classList.remove("recording");
+  DOM.micBtn.textContent = "Hold to speak";
+}
+
+async function startRecording() {
+  if (mic.recorder || mic.busy || practice.mode !== "voice" || DOM.micBtn.disabled) return;
+  try {
+    mic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setMicStatus("The microphone is not available (permission was not given, or no microphone was found). Type your message instead.");
+    return;
+  }
+  mic.chunks = [];
+  mic.recorder = new MediaRecorder(mic.stream);
+  mic.recorder.addEventListener("dataavailable", ev => { if (ev.data.size) mic.chunks.push(ev.data); });
+  mic.recorder.addEventListener("stop", onRecordingStopped, { once: true });
+  mic.startedAt = Date.now();
+  mic.recorder.start();
+  DOM.micBtn.classList.add("recording");
+  DOM.micBtn.textContent = "Listening... release to send";
+  setMicStatus("Listening. Release the button when you are done.");
+  mic.timer = setTimeout(stopRecording, MAX_STT_SECONDS * 1000); // the server also refuses clips over the limit
+}
+
+function stopRecording() {
+  if (mic.recorder && mic.recorder.state === "recording") mic.recorder.stop();
+}
+
+async function onRecordingStopped() {
+  const seconds = (Date.now() - mic.startedAt) / 1000;
+  const type = mic.recorder?.mimeType || "audio/webm";
+  const blob = new Blob(mic.chunks, { type });
+  releaseMic();
+  if (seconds < 0.4 || blob.size === 0) { setMicStatus("That was too short. Hold the button while you speak."); return; }
+  if (blob.size > MAX_STT_BYTES) { setMicStatus("That clip was too long. Try a shorter one, or type your message."); return; }
+  mic.busy = true;
+  DOM.micBtn.disabled = true;
+  setMicStatus("Turning your voice into text...");
+  try {
+    const res = await authFetch("/api/stt", {
+      method: "POST",
+      headers: { "Content-Type": type.split(";")[0], "X-Clip-Seconds": String(Math.min(seconds, MAX_STT_SECONDS).toFixed(2)) },
+      body: blob,
+    });
+    let data = null; try { data = await res.json(); } catch (e) { /* ignore */ }
+    if (!res.ok) throw new Error(data?.error?.message || `status ${res.status}`);
+    if (!data?.text) throw new Error("No words were heard");
+    setDraft(data.text);
+    setMicStatus("Here is what we heard. Edit it if needed, then press Send.");
+  } catch (e) {
+    setMicStatus(`Voice input did not work (${e.message}). Type your message instead.`);
+  } finally {
+    mic.busy = false;
+    DOM.micBtn.disabled = !session.active || DOM.raInput.disabled || !micAvailable;
+  }
+}
+
+if (micAvailable) {
+  DOM.micBtn.addEventListener("pointerdown", ev => { ev.preventDefault(); startRecording(); });
+  for (const t of ["pointerup", "pointercancel", "pointerleave"]) DOM.micBtn.addEventListener(t, stopRecording);
+  DOM.micBtn.addEventListener("keydown", ev => { if ((ev.key === " " || ev.key === "Enter") && !ev.repeat) { ev.preventDefault(); startRecording(); } });
+  DOM.micBtn.addEventListener("keyup", ev => { if (ev.key === " " || ev.key === "Enter") stopRecording(); });
+}
+
 async function syncServerMode(mode) {
   try {
     const res = await authFetch("/api/practice-mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
@@ -389,6 +468,7 @@ function setInput(enabled) {
   DOM.raInput.disabled = !enabled;
   DOM.sendBtn.disabled = !enabled;
   DOM.endBtn.disabled = !enabled;
+  DOM.micBtn.disabled = !enabled || !micAvailable;
   if (enabled) DOM.raInput.focus();
 }
 
@@ -506,6 +586,10 @@ async function startSession() {
     }
   }
   DOM.voiceBar.classList.toggle("hidden", practice.mode !== "voice");
+  // The microphone button is for voice mode only. If the browser cannot record, the notice says to type.
+  DOM.micBtn.classList.toggle("hidden", practice.mode !== "voice" || !micAvailable);
+  DOM.micNotice.classList.toggle("hidden", practice.mode !== "voice");
+  setMicStatus(micAvailable ? "Hold the microphone button and speak, then edit the words before you send. You can always type instead." : "This browser cannot record audio. Type your message instead.");
   setMuted(readStoredMuted(localStorage));
 
   try {
