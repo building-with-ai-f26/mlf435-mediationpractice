@@ -46,9 +46,11 @@ export function buildLiveRecord({ session, live, models, rubricVersion, graders 
     partial,
     models,
     rubricVersion,
+    resolved: !!session.resolved,
+    resolvedTurn: session.resolvedTurn ?? null,
     openness: {
       start: live.opennessStart || null,
-      turns: live.turns.map(t => ({ turn: t.turn, tags: t.tags, openness_before: t.opennessBefore, openness_after: t.opennessAfter })),
+      turns: live.turns.map(t => ({ turn: t.turn, tags: t.tags, openness_before: t.opennessBefore, openness_after: t.opennessAfter, resolution: t.resolution ?? null })),
     },
     routing: live.turns.map(t => ({ turn: t.turn, to: t.route.to, responders: t.route.responders, source: t.route.source })),
     transcript: lines,
