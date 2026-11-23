@@ -13,7 +13,9 @@ export const GRADER_MODELS = [
   { id: "openai/gpt-6-luna", name: "GPT" },
 ];
 export const TOKENS_RESIDENT = 150;
-export const TOKENS_GRADER = 1500;
+// 2000 since 2026-11-23: the rule is "1500 unless any call was cut off or the 95th percentile is above 1100". A current grader (GPT-6 Luna) was
+// cut off once in 187 calls. 2000 is also the server's cap (MAX_TOKENS_CAP in chatBody.mjs). Numbers: docs/model-choice.md.
+export const TOKENS_GRADER = 2000;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
 export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.

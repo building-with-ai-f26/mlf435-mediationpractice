@@ -26,7 +26,7 @@ test("config.js and app.js: residents default to 150 tokens, graders use tempera
   const read = f => readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8");
   const config = read("config.js"), app = read("app.js");
   assert.match(config, /export const TOKENS_RESIDENT = 150;/);
-  assert.match(config, /export const TOKENS_GRADER = 1500;/);
+  assert.match(config, /export const TOKENS_GRADER = 2000;/);
   assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: \{ enabled: false \} \};/);
   assert.match(app, /async function call\(model, messages, opts = \{ maxTokens: TOKENS_RESIDENT \}, role = "resident"\)/);
 });

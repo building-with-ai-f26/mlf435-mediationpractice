@@ -83,6 +83,26 @@ export function planRates(records) {
   return { overall, cells, shouldNot, pass };
 }
 
+// Output tokens per grader call, by grader model. Sessions saved after 2026-11-23 carry the real completion tokens; older ones
+// do not, so their size is estimated as characters / 4 (marked estimated). truncated counts replies cut off by the length limit.
+const pctile = (sorted, p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)] : null);
+export function graderTokenStats(records) {
+  const by = new Map();
+  for (const r of records) for (const g of r.graders || []) {
+    if (typeof g.raw !== "string") continue;
+    const real = Number.isFinite(g.completionTokens);
+    const tokens = real ? g.completionTokens : Math.ceil(g.raw.length / 4);
+    const e = by.get(g.model) || { model: g.model, calls: 0, tokens: [], truncated: 0, estimated: 0 };
+    e.calls += 1; e.tokens.push(tokens); if (!real) e.estimated += 1;
+    if (g.finishReason === "length") e.truncated += 1;
+    by.set(g.model, e);
+  }
+  return [...by.values()].map(e => {
+    const t = e.tokens.sort((a, b) => a - b);
+    return { model: e.model, calls: e.calls, median: pctile(t, 0.5), p95: pctile(t, 0.95), max: t[t.length - 1], truncated: e.truncated, estimated: e.estimated };
+  }).sort((a, b) => a.model.localeCompare(b.model));
+}
+
 // Share of sessions where each question was not met in the combined vote, overall and by persona.
 export function missRates(records) {
   return RUBRIC.map(q => {
@@ -137,7 +157,7 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, planRates: planRates(records), resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
+  return { total: records.length, ids, graderTokens: graderTokenStats(records), planRates: planRates(records), resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -163,6 +183,11 @@ export function formatReport(rep) {
   for (const [role, c] of Object.entries(rep.cost)) {
     const name = role === "user_session" ? "user session (residents + graders, no ra_sim)" : role;
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
+  }
+  if (rep.graderTokens?.length) {
+    L.push("", "(j) Grader output tokens per call (budget is TOKENS_GRADER in public/config.js; \"estimated\" = characters / 4 for older sessions)");
+    L.push("model".padEnd(36) + "calls".padEnd(7) + "median".padEnd(8) + "p95".padEnd(7) + "max".padEnd(7) + "cut off".padEnd(9) + "estimated");
+    for (const t of rep.graderTokens) L.push(t.model.padEnd(36) + String(t.calls).padEnd(7) + String(t.median).padEnd(8) + String(t.p95).padEnd(7) + String(t.max).padEnd(7) + String(t.truncated).padEnd(9) + t.estimated);
   }
   const pr = rep.planRates;
   if (pr && (pr.overall.n || pr.shouldNot.n)) {
