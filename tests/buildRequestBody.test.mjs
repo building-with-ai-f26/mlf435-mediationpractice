@@ -21,12 +21,13 @@ test("temperature 0 is kept, not replaced by the 0.8 default", () => {
   assert.equal(buildRequestBody("m", msgs, { temperature: 0 }).temperature, 0);
 });
 
-test("config.js and app.js: residents default to 150 tokens, graders use temperature 0 with reasoning off", async () => {
+test("config.js and app.js: residents default to 150 tokens with reasoning off, graders use temperature 0 with reasoning off", async () => {
   const { readFileSync } = await import("node:fs");
   const read = f => readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8");
   const config = read("config.js"), app = read("app.js");
   assert.match(config, /export const TOKENS_RESIDENT = 150;/);
+  assert.match(config, /export const RESIDENT_OPTS = \{ maxTokens: TOKENS_RESIDENT, reasoning: REASONING };/);
   assert.match(config, /export const TOKENS_GRADER = 2000;/);
-  assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: \{ enabled: false \} \};/);
-  assert.match(app, /async function call\(model, messages, opts = \{ maxTokens: TOKENS_RESIDENT \}, role = "resident"\)/);
+  assert.match(config, /export const GRADER_OPTS = \{ maxTokens: TOKENS_GRADER, temperature: 0, reasoning: REASONING };/);
+  assert.match(app, /async function call\(model, messages, opts = RESIDENT_OPTS, role = "resident"\)/);
 });

@@ -48,12 +48,12 @@ test("resolved: both accepted, openness earned, plan has specifics", () => {
   assert.equal(resolutionState(h, [PLAN({ plan_has_specifics: true })], OPEN), "resolved");
 });
 
-test("an acceptance does not count when that resident's openness is below 2", () => {
+test("an acceptance does not count when that resident has no trust (openness 0)", () => {
   const h = hist([{ ra: "Quiet by 10:30, check in Friday?", replies: [ALEX_YES, JORDAN_YES] }]);
   const tags = [PLAN({ plan_has_specifics: true })];
-  assert.equal(resolutionState(h, tags, { alex: 2, jordan: 1 }), "accepted_by_one");
-  assert.equal(resolutionState(h, tags, { alex: 1, jordan: 1 }), "proposal_pending");
+  assert.equal(resolutionState(h, tags, { alex: 1, jordan: 0 }), "accepted_by_one");
   assert.equal(resolutionState(h, tags, { alex: 0, jordan: 0 }), "proposal_pending");
+  assert.equal(resolutionState(h, tags, { alex: 1, jordan: 1 }), "resolved"); // some trust is enough
 });
 
 test("an acceptance does not count when the plan fails that resident's must-haves", () => {
@@ -173,21 +173,24 @@ test("prompt shows the speaker's must-haves and flexible items, and not the othe
   assert.match(p, /Never agree to a plan that breaks a must-have/);
 });
 
-test("after two turns with a fitting plan and openness 2 or more, the resident must accept or name ONE must-have", () => {
-  for (const level of [2, 3]) {
-    const p = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, level, "RA", 2);
-    assert.match(p, /must either accept it in your own words/);
-    assert.match(p, /name ONE specific must-have it fails/);
+test("after one turn with a fitting plan and openness 2 or more, the resident must accept or name ONE must-have", () => {
+  for (const level of [2, 3]) for (const standing of [1, 2]) {
+    const p = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, level, "RA", standing);
+    assert.match(p, /must now either accept it or name ONE specific must-have it fails/);
     assert.match(p, /Do not repeat an objection you already made/);
+    assert.match(p, /start with "That works for me\."/);
   }
 });
 
-test("the obligation is absent below two turns of standing, and below openness 2 the resident is not ready", () => {
-  const early = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 2, "RA", 1);
-  assert.doesNotMatch(early, /must either accept it/);
-  assert.match(early, /may accept it once you feel heard/);
-  const closed = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 1, "RA", 5);
-  assert.doesNotMatch(closed, /must either accept it/);
+test("on the first reaction to a fitting plan the resident accepts it or names one must-have; at openness 0 the resident is not ready", () => {
+  const first = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 2, "RA", 0);
+  assert.doesNotMatch(first, /must now either accept/);
+  assert.match(first, /accept it now, once you feel heard/);
+  assert.match(first, /name that ONE must-have and nothing else/);
+  assert.match(first, /start with "That works for me\."/);
+  const closed = mediationPrompt("noise", "medium", [], "Jordan", 5, profiles, 0, "RA", 5);
+  assert.doesNotMatch(closed, /must now either accept/);
+  assert.doesNotMatch(closed, /That works for me/);
   assert.match(closed, /not ready to accept any plan yet/);
 });
 
@@ -274,4 +277,53 @@ test("report: plans reached by persona, skipping records saved before resolution
   ];
   const r = resolutionByPersona(recs, ["strong", "hostile", "average"]);
   assert.deepEqual(r.map(x => [x.persona, x.n, x.resolved, x.meanTurn]), [["strong", 3, 2, 7], ["hostile", 1, 0, null]]);
+});
+
+import { isConfirmation } from "../public/logic.js";
+test("isConfirmation: 'that plan works for me' counts, a hedged or questioning or vague reply does not", () => {
+  assert.equal(isConfirmation("Sam, that plan works for me. Lights out by 10:30 on weeknights and I'll keep to it."), true);
+  assert.equal(isConfirmation("That works for me. I'll have the study group in the lounge until 11:30 on Tuesdays and Thursdays."), true);
+  assert.equal(isConfirmation("That plan works for me, but only if the group moves to the lounge on Tuesdays."), false); // hedge
+  assert.equal(isConfirmation("Does that plan work for me? I think so."), false);
+  assert.equal(isConfirmation("Sure, that works for me."), false); // nothing concrete
+  assert.equal(isConfirmation("The plan sounds fine, I guess."), false);
+});
+
+test("isConfirmation: other plain acceptances count, and a question after an acceptance does not void it", () => {
+  assert.equal(isConfirmation("Sam, I can live with that. The group keeps the room until 11:30 on Tuesdays and Thursdays."), true);
+  assert.equal(isConfirmation("I'm fine with the plan. Lights out by 10:30 on weeknights and I'll keep to it."), true);
+  assert.equal(isConfirmation("That works for me. I'll keep the room quiet by 10:30 on weeknights. Sam, can you check in next Friday?"), true);
+  // Still not acceptances.
+  assert.equal(isConfirmation("Does that work for me? Can you check in next Friday?"), false);
+  assert.equal(isConfirmation("I can live with that, but only if the group moves to the lounge on Tuesdays."), false); // hedge
+  assert.equal(isConfirmation("I can live with that."), false); // nothing concrete
+  assert.equal(isConfirmation("I agree with Jordan's point about Tuesdays."), false); // not about the plan
+});
+
+test("an earlier acceptance survives a neutral reply and a vague wrap-up the tagger could not verify", () => {
+  const h = hist([
+    { ra: "Quiet by 10:30, study group in the lounge on Tuesdays and Thursdays, check in Friday. Do you both agree?", replies: [ALEX_YES, JORDAN_YES] },
+    { ra: "Great, sounds like we are on the same page. Thanks both.", replies: [{ sender: "Alex", text: "Thanks Sam, see you Friday." }, { sender: "Jordan", text: "Thanks. See you at the check-in." }] },
+  ]);
+  // The wrap-up is tagged as not meeting needs, but it does not restate the plan (no specifics), so it is not trusted.
+  const tags = [PLAN({ plan_has_specifics: true }), PLAN({ meets_needs: { alex: false, jordan: false } })];
+  assert.equal(resolutionState(h, tags, OPEN), "resolved");
+});
+
+test("a plan that is restated and now breaks a must-have takes back that resident's acceptance", () => {
+  const h = hist([
+    { ra: "Quiet by 10:30, study group in the lounge Tuesdays and Thursdays, check in Friday.", replies: [ALEX_YES, JORDAN_YES] },
+    { ra: "Final plan: the study group ends at 10:30 in the lounge, check in Friday.", replies: [{ sender: "Alex", text: "Thanks Sam, see you Friday." }, { sender: "Jordan", text: "Okay, see you Friday." }] },
+  ]);
+  const tags = [PLAN({ plan_has_specifics: true }), PLAN({ plan_has_specifics: true, meets_needs: { alex: true, jordan: false } })];
+  assert.equal(resolutionState(h, tags, OPEN), "accepted_by_one");
+});
+
+test("a later question or hedge from a resident who had accepted takes the acceptance back; a failed tagger message is skipped", () => {
+  const h = hist([
+    { ra: "Quiet by 10:30, check in Friday?", replies: [ALEX_YES, JORDAN_YES] },
+    { ra: "Anything else?", replies: [{ sender: "Alex", text: "Can we change the check-in to Monday?" }, { sender: "Jordan", text: "No, I'm good." }] },
+  ]);
+  assert.equal(resolutionState(h, [PLAN({ plan_has_specifics: true }), PLAN()], OPEN), "accepted_by_one");
+  assert.equal(resolutionState(h, [PLAN({ plan_has_specifics: true }), null], OPEN), "exploring"); // last tag failed
 });

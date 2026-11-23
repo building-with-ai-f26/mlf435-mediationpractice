@@ -5,10 +5,11 @@ import path from "path";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { PERSONAS } from "./personas.mjs";
-import { MAIN_MODEL, GRADER_MODELS, GRADER_OPTS, TOKENS_RESIDENT, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
-import { getResponder, commitTurn, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, proposalStanding, resolutionState, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
+import { RESIDENT_MODEL, GRADER_MODELS, graderOpts, RESIDENT_OPTS, TAGGER_MODEL, TAGGER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "../public/config.js";
+import { routeMessage, bothOrder, parseRouterReply, commitReplies, mediationPrompt, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, proposalStanding, resolutionState, buildRequestBody, cleanResponse, isTurnCapReached } from "../public/logic.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined } from "../public/rubric.js";
 import { mockResponse } from "../public/mock.js";
+import { buildOpenRouterBody, zdrRefusalMessage } from "../chatBody.mjs";
 
 export const SCHEMA_VERSION = 1;
 export const SCENARIOS = ["noise", "cleaning", "guest policy", "hygiene", "shared items", "religious practice"];
@@ -141,7 +142,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     return r;
   };
   const resident = async prompt => {
-    const r = await track("residents", MAIN_MODEL, [{ role: "system", content: prompt }], { maxTokens: TOKENS_RESIDENT });
+    const r = await track("residents", RESIDENT_MODEL, [{ role: "system", content: prompt }], RESIDENT_OPTS);
     if (!r.content) throw new Error(`Empty resident reply (finish_reason: ${r.finishReason})`);
     return cleanResponse(r.content);
   };
@@ -169,7 +170,11 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     const text = r.content.replace(/^\s*(RA|Sam)\s*:\s*/i, "").replace(/^"(.*)"$/s, "$1").trim();
     if (!text) throw new Error(`Empty RA message (finish_reason: ${r.finishReason})`);
     const raEntry = { sender: RA_NAME, text };
-    const speaker = getResponder(text, session.lastSpeaker);
+    // Who answers, as in the app: names decide; a message to both gets two replies in order; if nobody is named the
+    // resident who did not speak last answers (the app asks a router model here, the simulation does not).
+    const routed = routeMessage(text, session.lastSpeaker).to;
+    const keys = routed === "both" ? bothOrder(text, session.lastSpeaker) : routed === "unclear" ? [parseRouterReply("", session.lastSpeaker).to] : [routed];
+    const speakers = keys.map(k2 => (k2 === "alex" ? "Alex" : "Jordan"));
     // Tagger: an unreadable or failed reply leaves openness unchanged, same as the app.
     let tags = null;
     try {
@@ -181,14 +186,20 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     const before = { alex: session.openness.alex, jordan: session.openness.jordan };
     const openness = updateOpenness(session.openness, tags, difficulty);
     const tagList = [...turnLog.map(t => t.tags), tags];
-    const standing = proposalStanding([...session.turnHistory, raEntry], tagList)[speaker.toLowerCase()];
-    const reply = await resident(mediationPrompt(scenario, difficulty, [...session.turnHistory, raEntry], speaker, k, profiles, openness[speaker.toLowerCase()], "RA", standing));
+    const replies = [];
+    for (const speaker of speakers) {
+      const thread = [...session.turnHistory, raEntry, ...replies]; // the second resident sees the first reply
+      const standing = proposalStanding(thread, tagList)[speaker.toLowerCase()];
+      const reply = await resident(mediationPrompt(scenario, difficulty, thread, speaker, k, profiles, openness[speaker.toLowerCase()], "RA", standing));
+      replies.push({ sender: speaker, text: reply });
+    }
     session.openness = openness;
-    stamps.push(deps.now().toISOString(), deps.now().toISOString());
-    commitTurn(session, raEntry, speaker, reply);
+    stamps.push(deps.now().toISOString(), ...replies.map(() => deps.now().toISOString()));
+    commitReplies(session, raEntry, replies);
+    const speaker = speakers[0];
     // Same resolution rule as the app. The first turn it reads "resolved" is the turn the plan was reached.
     const resolution = resolutionState(session.turnHistory, [...tagList], session.openness);
-    turnLog.push({ turn: k, speaker, tags, openness_before: before, openness_after: { alex: openness.alex, jordan: openness.jordan }, resolution });
+    turnLog.push({ turn: k, speaker, responders: speakers, tags, openness_before: before, openness_after: { alex: openness.alex, jordan: openness.jordan }, resolution });
     if (resolution === "resolved" && !session.resolved) { session.resolved = true; session.resolvedTurn = k; }
   }
 
@@ -197,7 +208,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
   const graders = await Promise.all(GRADER_MODELS.map(async g => {
     const rec = { name: g.name, model: g.id, ok: false, raw: "", finishReason: null, answers: {}, changed: [], metCount: null };
     try {
-      const r = await track("graders", g.id, [{ role: "system", content: prompt }], GRADER_OPTS);
+      const r = await track("graders", g.id, [{ role: "system", content: prompt }], graderOpts(g));
       rec.raw = r.content; rec.finishReason = r.finishReason;
       rec.completionTokens = r.usage?.completion_tokens ?? null; // saved so the token report can use real numbers
       rec.reasoningTokens = r.usage?.completion_tokens_details?.reasoning_tokens ?? null;
@@ -221,7 +232,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     schemaVersion: SCHEMA_VERSION, createdAt: deps.now().toISOString(), gitCommit,
     scenario, difficulty,
     persona: { id: persona.id, category: persona.category, expected: persona.expected, maxTurns },
-    models: { resident: MAIN_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
+    models: { resident: RESIDENT_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
     rubricVersion: RUBRIC_VERSION,
     resolved: !!session.resolved, resolvedTurn: session.resolvedTurn ?? null,
     openness: { start: openStart, turns: turnLog },
@@ -239,12 +250,16 @@ export function makeApiCall(key) {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "RA Practice Scenarios (tools)" },
-      body: JSON.stringify(buildRequestBody(model, messages, opts)),
+      body: JSON.stringify(buildOpenRouterBody(buildRequestBody(model, messages, opts))), // zero data retention, same as the server
       signal: AbortSignal.timeout(90000),
     });
     const text = await res.text();
     let d = null; try { d = JSON.parse(text); } catch {}
-    if (!res.ok || !d || d.error) throw new Error(redact(`${model} HTTP ${res.status}: ${d?.error?.message || text.slice(0, 300)}`, key));
+    if (!res.ok || !d || d.error) {
+      const zdr = zdrRefusalMessage(model, d?.error?.message);
+      if (zdr) { console.error(`[zdr] no zero retention route for model ${model}`); throw new BudgetError(zdr); } // stop the whole run, no fallback
+      throw new Error(redact(`${model} HTTP ${res.status}: ${d?.error?.message || text.slice(0, 300)}`, key));
+    }
     const c = d.choices?.[0];
     return { content: typeof c?.message?.content === "string" ? c.message.content.trim() : "", finishReason: c?.finish_reason ?? null, usage: d.usage };
   };
@@ -305,7 +320,7 @@ export async function main(argv) {
       for (const t of rec.transcript.slice(2)) console.log(`  ${t.sender.padEnd(7)} ${clip(t.text)}`);
       const exp = persona.expected ? `${persona.expected.min} to ${persona.expected.max}` : "none";
       const flag = persona.expected && rec.result.met !== null ? (rec.result.met >= persona.expected.min && rec.result.met <= persona.expected.max ? "in range" : "OUT OF RANGE") : "";
-      console.log(`[${persona.id} #${run}] ${rec.result.met ?? "n/a"} of 15 (${rec.result.score ?? "n/a"}%), expected ${exp} ${flag} | graders ${rec.graders.map(g => `${g.name} ${g.ok ? g.metCount : "FAILED"}`).join(", ")} | changed ${rec.graders.reduce((n, g) => n + g.changed.length, 0)} | cost residents ${usd(rec.cost.residents)}, ra_sim ${usd(rec.cost.ra_sim)}, graders ${usd(rec.cost.graders)}`);
+      console.log(`[${persona.id} #${run}] ${rec.result.met ?? "n/a"} of 15 (${rec.result.score ?? "n/a"}%), expected ${exp} ${flag} | graders ${rec.graders.map(g => `${g.name} ${g.ok ? g.metCount : "FAILED"}`).join(", ")} | changed ${rec.graders.reduce((n, g) => n + g.changed.length, 0)} | reasoning tokens ${["residents", "tagger", "graders"].reduce((n, r) => n + (rec.usage[r].reasoning_tokens || 0), 0)} | cost residents ${usd(rec.cost.residents)}, ra_sim ${usd(rec.cost.ra_sim)}, graders ${usd(rec.cost.graders)}`);
       for (const g of rec.graders.filter(g => !g.ok)) console.error(`  ${g.name}: ${redact(g.error, key)}`);
       if (!rec.cost.total.known && !unknownCostWarned) { unknownCostWarned = true; console.warn("  Note: some costs are unknown, so --max-cost cannot count them. Fill in tools/prices.json."); }
       const rel = transcriptPath(new Date(rec.createdAt), args.scenario, args.difficulty, persona.id);

@@ -19,7 +19,7 @@ const dryDeps = (extra = {}) => ({ call: dryCall, prices: {}, now: fixedNow, ...
 const run = (persona, extra) => runOne({ scenario: "noise", difficulty: "medium", persona: PERSONAS.find(p => p.id === persona), raModel: "deepseek/deepseek-chat" }, dryDeps(extra));
 
 test("personas: ten of them with the required shape and table values", () => {
-  const table = { strong: [8, 12, 15], "rushed-good": [8, 6, 11], average: [8, 3, 7], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [8, 12, 15], "nickname-both": [8, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
+  const table = { strong: [15, 12, 15], "rushed-good": [8, 6, 11], average: [8, 3, 7], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [15, 12, 15], "nickname-both": [15, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
     assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "expectsPlan", "id", "maxTurns", "systemPrompt"].filter(k => k !== "expectsPlan" || p.expectsPlan !== undefined));
@@ -112,7 +112,10 @@ test("dry session: full record, persona turn limit wins, no secrets, no network"
   assert.equal(rec.cost.user_session.known, true);
   assert.doesNotMatch(JSON.stringify(rec), /sk-or-/);
   const strong = await run("strong");
-  assert.equal(strong.transcript.length, 2 + 8 * 2);
+  // Fifteen RA messages (the persona cap). A message to both roommates gets two replies, as in the app, so there are at least 15 replies.
+  assert.equal(strong.transcript.filter(t => t.sender === "Sam").length, 15);
+  assert.ok(strong.transcript.length >= 2 + 15 * 2);
+  assert.ok(strong.openness.turns.every(t => Array.isArray(t.responders) && t.responders.length >= 1));
 });
 
 test("a grader that returns junk is recorded as failed and the others still score", async () => {
@@ -166,7 +169,9 @@ test("report: means, ranges, ordering, changed count, disagreement and cost", ()
   assert.equal(rep.graderMeans.find(g => g.grader === "GPT").byPersona.minimal, null);
   assert.deepEqual(rep.changed.map(c => c.changedYesToNo), [1, 0, 3]);
   // strong #1: no disagreement. strong #2: Q4 differs. minimal: 2 valid graders, Q5 differs. 15 questions each.
-  assert.deepEqual(rep.disagreement, { asked: 45, disagreed: 2, share: 2 / 45 });
+  const { byQuestion, ...overall } = rep.disagreement;
+  assert.deepEqual(overall, { asked: 45, disagreed: 2, share: 2 / 45 });
+  assert.deepEqual([byQuestion[4], byQuestion[5], byQuestion[1]], [{ asked: 3, disagreed: 1 }, { asked: 3, disagreed: 1 }, { asked: 3, disagreed: 0 }]);
   assert.equal(rep.cost.residents.sessions, 2);
   assert.equal(rep.cost.residents.unknown, 1);
   assert.ok(Math.abs(rep.cost.residents.mean - 0.03) < 1e-9);
@@ -259,4 +264,27 @@ test("graderTokenStats: median, p95, max, cut-off count and estimates per grader
   assert.deepEqual([stats["b/m"].calls, stats["b/m"].max, stats["b/m"].truncated, stats["b/m"].estimated], [3, 1500, 1, 1]);
   assert.equal(stats["b/m"].median, 400); // the estimated call is chars / 4
   assert.deepEqual(graderTokenStats([{ graders: [{ model: "x/y" }] }]), []); // no raw text: skipped
+});
+
+import { planBlocker, planCells } from "../tools/report.mjs";
+const T = (o = {}) => ({ turn: 1, speaker: "Alex", responders: ["Alex"], tags: { proposal_on_table: true, plan_has_specifics: true, meets_needs: { alex: true, jordan: true } }, openness_after: { alex: 2, jordan: 2 }, ...o });
+const R = (turns, over = {}) => ({ persona: { id: "strong" }, difficulty: "medium", resolved: false, openness: { turns }, ...over });
+
+test("planBlocker names the most basic reason a plan was not reached", () => {
+  assert.equal(planBlocker(R([T()], { resolved: true })), null);
+  assert.equal(planBlocker({ persona: { id: "x" }, resolved: false }), null);
+  assert.match(planBlocker(R([T({ tags: {} })])), /ever proposed/);
+  assert.match(planBlocker(R([T(), T({ tags: { proposal_on_table: false } })])), /dropped/);
+  assert.match(planBlocker(R([T({ openness_after: { alex: 0, jordan: 3 } })])), /low trust: alex/);
+  assert.match(planBlocker(R([T({ tags: { proposal_on_table: true, plan_has_specifics: true, meets_needs: { alex: false, jordan: true } } })])), /broke a must-have/);
+  assert.match(planBlocker(R([T({ tags: { proposal_on_table: true, plan_has_specifics: false, meets_needs: { alex: true, jordan: true } } })])), /never had what, when/);
+  assert.match(planBlocker(R([T({ responders: ["Jordan"] }), T({ responders: ["Jordan"] })])), /only one resident answered/);
+  assert.match(planBlocker(R([T({ responders: ["Alex", "Jordan"] })])), /no clear acceptance/);
+});
+
+test("planCells groups by persona and difficulty with blocker counts", () => {
+  const cells = planCells([R([T()], { resolved: true, resolvedTurn: 9 }), R([T({ tags: {} })]), R([T({ tags: {} })]), R([T()], { difficulty: "hard", resolved: true, resolvedTurn: 12 })]);
+  const med = cells.find(c => c.cell === "strong / medium"), hard = cells.find(c => c.cell === "strong / hard");
+  assert.deepEqual([med.n, med.resolved, med.turns, med.blockers["no plan was ever proposed"]], [3, 1, [9], 2]);
+  assert.deepEqual([hard.n, hard.resolved], [1, 1]);
 });

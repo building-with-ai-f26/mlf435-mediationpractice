@@ -3,30 +3,67 @@ import { startingOpenness } from "./logic.js";
 // Settings, resident profiles, resident prompts and session shape. No DOM, no network, no storage,
 // so app.js, mock.js, tests and Node scripts can all import this file.
 
-// Keep in sync with server.mjs (ALLOWED_MODELS). The two lists must match.
-export const MAIN_MODEL = "deepseek/deepseek-chat";
+// Every model id lives here. Node (server, tools) reads each from the environment; the defaults are below.
+// The browser has no environment, so it asks the server (/config.json) and calls applyServerModels().
+// The server builds its allowlist from these same values (allModelIds), so changing one here or in the env is enough.
+// Env names: RESIDENT_MODEL, GRADER_1_MODEL, GRADER_2_MODEL, GRADER_3_MODEL, TAGGER_MODEL, ROUTER_MODEL.
+export const DEFAULT_RESIDENT_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_GRADER_MODELS = ["anthropic/claude-haiku-5.5", "google/gemini-3.1-flash-lite", "openai/gpt-6-luna"];
+export const DEFAULT_TAGGER_MODEL = "anthropic/claude-haiku-5.5";
+export const DEFAULT_ROUTER_MODEL = "anthropic/claude-haiku-5.5";
+export function resolveModelId(value, fallback) {
+  const v = String(value ?? "").trim();
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.:-]+$/.test(v) ? v : fallback;
+}
+export const resolveResidentModel = value => resolveModelId(value, DEFAULT_RESIDENT_MODEL);
+const env = name => (typeof process !== "undefined" ? process.env?.[name] : undefined);
+
+export let RESIDENT_MODEL = resolveResidentModel(env("RESIDENT_MODEL"));
+export function setResidentModel(value) { RESIDENT_MODEL = resolveResidentModel(value); }
+// One reasoning setting for residents, router, tagger and graders: off. A reasoning model (Haiku) otherwise spends the
+// whole token budget thinking and returns nothing. A model that cannot turn it off (Gemini 3.6 Flash) uses the lowest setting.
+export const REASONING = { enabled: false };
+export const REASONING_LOWEST = { effort: "low" };
+// Three graders from three vendors. All turn reasoning off. Gemini 3.6 Flash could not (mandatory reasoning used up the token budget and
+// grading failed in about 3 of 4 sessions), so slot 2 is Gemini 3.1 Flash Lite. A grader entry may carry its own `reasoning` (see graderOpts).
 export const GRADER_MODELS = [
-  { id: "anthropic/claude-haiku-5.5", name: "Claude" },
-  // Gemini 3.1 Flash Lite takes reasoning off. Gemini 3.6 Flash cannot (mandatory reasoning used up the 1500 token budget
-  // and grading failed in about 3 of 4 sessions), so it is not used.
-  { id: "google/gemini-3.1-flash-lite", name: "Gemini" },
-  { id: "openai/gpt-6-luna", name: "GPT" },
+  { id: resolveModelId(env("GRADER_1_MODEL"), DEFAULT_GRADER_MODELS[0]), name: "Claude" },
+  { id: resolveModelId(env("GRADER_2_MODEL"), DEFAULT_GRADER_MODELS[1]), name: "Gemini" },
+  { id: resolveModelId(env("GRADER_3_MODEL"), DEFAULT_GRADER_MODELS[2]), name: "GPT" },
 ];
+export let TAGGER_MODEL = resolveModelId(env("TAGGER_MODEL"), DEFAULT_TAGGER_MODEL);
+export let ROUTER_MODEL = resolveModelId(env("ROUTER_MODEL"), DEFAULT_ROUTER_MODEL);
+
+// Browser: take the ids the server is using (from /config.json). Anything missing or malformed keeps the current value.
+export function applyServerModels(c) {
+  if (!c || typeof c !== "object") return;
+  if (c.residentModel) setResidentModel(c.residentModel);
+  if (Array.isArray(c.graderModels)) c.graderModels.slice(0, GRADER_MODELS.length).forEach((id, i) => { GRADER_MODELS[i].id = resolveModelId(id, GRADER_MODELS[i].id); });
+  if (c.taggerModel) TAGGER_MODEL = resolveModelId(c.taggerModel, TAGGER_MODEL);
+  if (c.routerModel) ROUTER_MODEL = resolveModelId(c.routerModel, ROUTER_MODEL);
+}
+// Every model id the app may call. The server allows exactly these.
+export const allModelIds = () => [...new Set([RESIDENT_MODEL, ...GRADER_MODELS.map(g => g.id), TAGGER_MODEL, ROUTER_MODEL])];
+// The shape of /config.json's model fields. Used by server.mjs.
+export const modelConfig = () => ({ residentModel: RESIDENT_MODEL, graderModels: GRADER_MODELS.map(g => g.id), taggerModel: TAGGER_MODEL, routerModel: ROUTER_MODEL });
+
 export const TOKENS_RESIDENT = 150;
+export const RESIDENT_OPTS = { maxTokens: TOKENS_RESIDENT, reasoning: REASONING };
 // 2000 since 2026-11-23: the rule is "1500 unless any call was cut off or the 95th percentile is above 1100". A current grader (GPT-6 Luna) was
 // cut off once in 187 calls. 2000 is also the server's cap (MAX_TOKENS_CAP in chatBody.mjs). Numbers: docs/model-choice.md.
 export const TOKENS_GRADER = 2000;
 // Graders: deterministic, and no hidden reasoning (Haiku spent its whole 600 token budget on it in tools/probe-models.mjs).
-export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: { enabled: false } };
+export const GRADER_OPTS = { maxTokens: TOKENS_GRADER, temperature: 0, reasoning: REASONING };
+// Options for one grader: the shared ones, with the grader's own reasoning setting when it has one.
+export const graderOpts = g => (g.reasoning ? { ...GRADER_OPTS, reasoning: g.reasoning } : GRADER_OPTS);
 // Tagger: labels each RA message so resident openness can change. Same settings as the graders, small budget.
-export const TAGGER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_TAGGER = 220; // was 150: the tagger now also returns proposal_on_table, meets_needs and plan_has_specifics
-export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: { enabled: false } };
+export const TAGGER_OPTS = { maxTokens: TOKENS_TAGGER, temperature: 0, reasoning: REASONING };
 // Router: picks who answers when the RA message names nobody. One word back, so 30 tokens is plenty.
-export const ROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const TOKENS_ROUTER = 30;
-export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: { enabled: false } };
-export const MAX_TURNS = 10;
+export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: REASONING };
+export const MAX_TURNS = 15;
+
 
 // What each resident needs for any deal to work (mustHaves, 2) and where they can give (flexible, 2).
 // Plain data, one entry per topic, so it can move into a scenario file later without changing shape.
