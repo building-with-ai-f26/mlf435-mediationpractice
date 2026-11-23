@@ -47,12 +47,14 @@
 
         <div class="form-stack">
           <div class="field">
-            <label for="ra-name">Your name</label>
-            <input type="text" id="ra-name" placeholder="Enter your name" />
+            <label for="situation-select">Situation</label>
+            <select id="situation-select">
+              <option value="roommate-conflict">Roommate Conflict</option>
+            </select>
           </div>
 
-          <div class="field">
-            <label for="topic-select">Situation</label>
+          <div class="field" id="concern-field">
+            <label for="topic-select">Concern</label>
             <select id="topic-select">
               <option value="noise">Noise Complaint</option>
               <option value="cleaning">Cleaning Dispute</option>

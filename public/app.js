@@ -131,7 +131,7 @@ const $ = id => document.getElementById(id);
 
 const DOM = {
   setup: $("setup"), chatView: $("chat-view"), debriefView: $("debrief-view"),
-  raNameInput: $("ra-name"), topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
+  topicSelect: $("topic-select"), difficultySelect: $("difficulty"),
   startBtn: $("start-btn"), raNameDisplay: $("ra-name-display"),
   topicBadge: $("topic-badge"), difficultyBadge: $("difficulty-badge"),
   residentCards: $("resident-cards"), chatLog: $("chat-log"),
@@ -279,11 +279,19 @@ function saveLog() {
   localStorage.setItem("ra_logs", JSON.stringify(logs.slice(-20)));
 }
 
+// Concern choices belong to the Roommate Conflict situation. Other situations will bring their own list.
+function syncConcernField() {
+  const field = $("concern-field");
+  if (field) field.hidden = $("situation-select")?.value !== "roommate-conflict";
+}
+$("situation-select")?.addEventListener("change", syncConcernField);
+syncConcernField();
+
 async function startSession() {
-  // Signed in: the first name from the Google token (cleaned). Otherwise the typed name, or "RA".
+  // The name comes only from the Google sign-in (first name, cleaned). Mock mode and signed-out use "RA".
   // The saved record still says "RA" (buildLiveRecord scrubs this name).
   const signedInName = MOCK ? "RA" : facilitatorName(idToken, Date.now());
-  session.raName = signedInName !== "RA" ? signedInName : (DOM.raNameInput.value.trim() || "RA");
+  session.raName = signedInName;
   session.topic = DOM.topicSelect.value;
   session.difficulty = DOM.difficultySelect.value;
   session.turnHistory = [];
