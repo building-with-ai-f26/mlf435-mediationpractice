@@ -59,6 +59,30 @@ export function resolutionByPersona(records, ids) {
   }).filter(x => x.n > 0);
 }
 
+// The plan rate bar (option C). The strong-style personas (expectsPlan) pass when at least 75 percent of all their sessions reach a plan
+// AND no persona-and-difficulty cell is flagged. A cell is flagged only when it is under 50 percent over 8 or more sessions, so a
+// small cell cannot fail the bar by bad luck. Every other persona is reported separately: any plan there is a problem.
+export const PLAN_BAR = { overall: 0.75, cellFloor: 0.5, cellMinSessions: 8 };
+export function planRates(records) {
+  const wants = new Set(PERSONAS.filter(p => p.expectsPlan).map(p => p.id));
+  const usable = records.filter(r => typeof r.resolved === "boolean");
+  const should = usable.filter(r => wants.has(r.persona.id));
+  const byCell = new Map();
+  for (const r of should) {
+    const key = `${r.persona.id} / ${r.difficulty}`;
+    const c = byCell.get(key) || { cell: key, n: 0, resolved: 0 };
+    c.n += 1; if (r.resolved) c.resolved += 1;
+    byCell.set(key, c);
+  }
+  const cells = [...byCell.values()].map(c => ({ ...c, rate: c.resolved / c.n, flagged: c.n >= PLAN_BAR.cellMinSessions && c.resolved / c.n < PLAN_BAR.cellFloor })).sort((a, b) => a.cell.localeCompare(b.cell));
+  const resolved = should.filter(r => r.resolved).length;
+  const overall = { n: should.length, resolved, rate: should.length ? resolved / should.length : null };
+  const others = usable.filter(r => !wants.has(r.persona.id));
+  const shouldNot = { n: others.length, resolved: others.filter(r => r.resolved).length };
+  const pass = overall.n > 0 && overall.rate >= PLAN_BAR.overall && !cells.some(c => c.flagged) && shouldNot.resolved === 0;
+  return { overall, cells, shouldNot, pass };
+}
+
 // Share of sessions where each question was not met in the combined vote, overall and by persona.
 export function missRates(records) {
   return RUBRIC.map(q => {
@@ -113,7 +137,7 @@ export function buildReport(records) {
     return [role, { mean: mean(known.map(r => r.cost[role].usd)), sessions: known.length, unknown: records.length - known.length }];
   }));
 
-  return { total: records.length, ids, resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
+  return { total: records.length, ids, planRates: planRates(records), resolution: resolutionByPersona(records, ids), misses: missRates(records), changes: classifyChanges(records), scores, graderMeans, changed, disagreement: { asked, disagreed, share: asked ? disagreed / asked : null }, cost };
 }
 
 const f = (x, d = 2) => (x === null || x === undefined ? "n/a" : x.toFixed(d));
@@ -139,6 +163,15 @@ export function formatReport(rep) {
   for (const [role, c] of Object.entries(rep.cost)) {
     const name = role === "user_session" ? "user session (residents + graders, no ra_sim)" : role;
     L.push(`${name.padEnd(46)} ${c.mean === null ? "unknown" : "$" + c.mean.toFixed(4)}  (${c.sessions} known, ${c.unknown} unknown)`);
+  }
+  const pr = rep.planRates;
+  if (pr && (pr.overall.n || pr.shouldNot.n)) {
+    const pct = x => (x === null ? "n/a" : `${(x * 100).toFixed(0)}%`);
+    L.push("", `(i) Plan rate bar: at least ${PLAN_BAR.overall * 100}% of strong-style sessions reach a plan; no cell under ${PLAN_BAR.cellFloor * 100}% over ${PLAN_BAR.cellMinSessions} or more sessions`);
+    L.push(`overall (strong-style personas): ${pr.overall.resolved} of ${pr.overall.n} sessions (${pct(pr.overall.rate)})`);
+    for (const c of pr.cells) L.push(`  ${c.cell.padEnd(28)} ${c.resolved} of ${c.n} (${pct(c.rate)})${c.flagged ? "  <- FLAGGED" : c.n < PLAN_BAR.cellMinSessions ? "  (fewer than " + PLAN_BAR.cellMinSessions + " sessions, not judged)" : ""}`);
+    L.push(`other personas (must not reach a plan): ${pr.shouldNot.resolved} of ${pr.shouldNot.n} did${pr.shouldNot.resolved ? "  <- PROBLEM" : ""}`);
+    L.push(`result: ${pr.pass ? "PASS" : "NOT PASSED"}`);
   }
   if (rep.resolution?.length) {
     L.push("", "(h) Plans reached (both residents accepted a plan with specifics), by persona", "persona".padEnd(17) + "resolved".padEnd(10) + "turn(s)");

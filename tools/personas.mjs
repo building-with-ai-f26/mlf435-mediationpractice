@@ -1,5 +1,7 @@
 // Simulated RA personas for tools/simulate.mjs. Pure data, no network.
 // expected = { min, max } met count out of 15, or null when there is no expectation.
+// expectsPlan = true for the strong-style personas: a plan between the residents should be reachable for them, and tools/report.mjs
+// judges them by the plan rate bar (at least 75 percent of their sessions reach a plan, no cell flagged). Every other persona must NOT reach a plan.
 // Ranges were retuned on 2026-11-22 from two live eval runs (rubric v1 and v2, 3 runs per persona, noise/medium):
 // each range covers both runs' mean score with about 1 point of margin. side-taker and minimal have no data yet, so they are unchanged.
 // 2026-11-23: `average` retuned to 3 to 7 for the rubric v4 graders (Claude, Gemini 3.1 Flash Lite, GPT-6 Luna): 3 runs scored 4, 5 and 6. The other ranges still held.
@@ -38,7 +40,7 @@ const STRONG_AVOIDS = ["Taking sides.", "Lecturing or telling anyone what they s
 
 export const PERSONAS = [
   {
-    id: "strong", category: "Normal", expected: { min: 12, max: 15 }, maxTurns: 8,
+    id: "strong", category: "Normal", expected: { min: 12, max: 15 }, maxTurns: 8, expectsPlan: true,
     systemPrompt: prompt("A skilled, calm RA who explains the purpose, sets ground rules, invites each roommate in turn, reflects and validates feelings, asks each to say what they heard, asks for options, helps them agree on who does what and when, and schedules a check-in.", STRONG_DOS, STRONG_AVOIDS),
   },
   {
@@ -72,12 +74,12 @@ export const PERSONAS = [
       ["Reflecting, summarizing, naming feelings or suggesting anything.", "Writing more than one short line."]),
   },
   {
-    id: "typo-good", category: "Messy", expected: { min: 12, max: 15 }, maxTurns: 8,
+    id: "typo-good", category: "Messy", expected: { min: 12, max: 15 }, maxTurns: 8, expectsPlan: true,
     systemPrompt: prompt("An RA with the skills of a strong mediator, but who writes informally: all lowercase, with typos, missing punctuation and run-on messages.",
       STRONG_DOS, [...STRONG_AVOIDS, "Proper capitalization, careful spelling and neat punctuation."]),
   },
   {
-    id: "nickname-both", category: "Messy", expected: { min: 11, max: 15 }, maxTurns: 8,
+    id: "nickname-both", category: "Messy", expected: { min: 11, max: 15 }, maxTurns: 8, expectsPlan: true,
     systemPrompt: prompt("An RA with good mediation skills who is inconsistent about names. This tests which roommate answers.",
       [...STRONG_DOS.slice(0, 6), "Call the roommates by nicknames such as \"Al\" and \"J\".", "In some messages name both roommates, and in others name neither."],
       ["Taking sides.", "Lecturing."]),
