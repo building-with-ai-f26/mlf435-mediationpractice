@@ -40,3 +40,22 @@ test("existing checks still reject bad model, messages, and body", () => {
   assert.equal(validateChatBody({ ...base, messages: [] }, allowed).error, "messages must be a non-empty array");
   assert.equal(validateChatBody([], allowed).error, "Invalid request");
 });
+
+import { buildOpenRouterBody, zdrEnabled } from "../chatBody.mjs";
+
+test("zdr: body always has provider zdr true when flag is on (default)", () => {
+  const allowed = new Set(["m"]);
+  const { clean } = validateChatBody({ model: "m", messages: [{ role: "user", content: "x" }] }, allowed);
+  for (const env of [{}, { OPENROUTER_ZDR: "true" }, { OPENROUTER_ZDR: "1" }]) {
+    assert.deepEqual(buildOpenRouterBody(clean, env).provider, { zdr: true, data_collection: "deny" });
+  }
+});
+
+test("zdr: browser cannot set provider; flag off removes it", () => {
+  const allowed = new Set(["m"]);
+  const { clean } = validateChatBody({ model: "m", messages: [{ role: "user", content: "x" }], provider: { zdr: false } }, allowed);
+  assert.equal(clean.provider, undefined);
+  assert.equal(buildOpenRouterBody(clean, {}).provider.zdr, true);
+  assert.equal(zdrEnabled({ OPENROUTER_ZDR: "false" }), false);
+  assert.equal(buildOpenRouterBody(clean, { OPENROUTER_ZDR: "false" }).provider, undefined);
+});

@@ -146,3 +146,16 @@ test("PUBLIC_ORIGIN: its origin and Host are accepted, a random origin is reject
     assert.match(await raw("evil.example", "https://ra.example.edu"), /^HTTP\/1.1 403/);
   } finally { s.stop(); }
 });
+
+test("RESIDENT_MODEL: /config.json reports it, the default is Haiku, and it is allowed by the server", async () => {
+  const d = await start();
+  try {
+    const c = await (await fetch(d.base + "/config.json")).json();
+    assert.equal(c.residentModel, "anthropic/claude-haiku-5.5");
+  } finally { d.stop(); }
+  const s = await start({ RESIDENT_MODEL: "x-test/new-model", LIVE_AI_ENABLED: "true" });
+  try {
+    const c = await (await fetch(s.base + "/config.json")).json();
+    assert.equal(c.residentModel, "x-test/new-model");
+  } finally { s.stop(); }
+});
