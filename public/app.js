@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, turnLabel, createConfirmGate, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, sidebarSignals, turnLabel, createConfirmGate, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession, difficultyLabel, topicLabel } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -394,12 +394,14 @@ function renderCards(profiles) {
   DOM.residentCards.innerHTML = `
     <div class="resident-card alex">
       <div class="card-header"><span class="card-name">${profiles.alex.name}</span><span class="card-handle">${profiles.alex.handle}</span></div>
+      <div class="card-mood" id="mood-alex"></div>
       <div class="card-meta">${profiles.alex.meta}</div>
       <div class="card-trait">${profiles.alex.trait}</div>
       <div class="card-stance">${profiles.alex.stance}</div>
     </div>
     <div class="resident-card jordan">
       <div class="card-header"><span class="card-name">${profiles.jordan.name}</span><span class="card-handle">${profiles.jordan.handle}</span></div>
+      <div class="card-mood" id="mood-jordan"></div>
       <div class="card-meta">${profiles.jordan.meta}</div>
       <div class="card-trait">${profiles.jordan.trait}</div>
       <div class="card-stance">${profiles.jordan.stance}</div>
@@ -461,11 +463,40 @@ function showLoading() {
 function hideLoading() {
   document.getElementById("typing-bubble")?.remove();
 }
-// The page scrolls (see .chat-main in styles.css). The toolbar and composer are sticky, so they stay in view.
+// The chat screen is exactly the window high (body.in-chat in styles.css): only the conversation scrolls, the toolbar and message box stay put.
 function scrollToBottom() {
-  window.scrollTo({ top: document.documentElement.scrollHeight });
+  DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
+}
+// Chat screen on or off. On, the signed-in line and the build label move into the footer under the message box; off, they go back to the page bottom.
+function chatScreen(on) {
+  document.body.classList.toggle("in-chat", on);
+  const slot = $("chat-footer"), bar = $("user-bar"), build = $("build-footer");
+  if (!slot || !bar || !build) return;
+  if (on) slot.append(bar, build);
+  else document.body.append(bar, build);
+  if (!on) window.scrollTo(0, 0);
+}
+// The sidebar changes as the conversation does: each resident's mood, the moves made so far, how evenly you spoke to each of them,
+// and a soft warning about the last message. Display only; see sidebarSignals in logic.js.
+function updateSidebar() {
+  const sig = sidebarSignals(live.turns, session.openness);
+  for (const r of ["alex", "jordan"]) {
+    const el = $(`mood-${r}`); if (!el) continue;
+    const m = sig.moods[r];
+    el.innerHTML = `<span class="mood-meter" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="${i <= m.level ? "on" : ""}"></i>`).join("")}</span><span class="mood-label">${esc(m.label)}</span>`;
+    el.setAttribute("aria-label", `${r === "alex" ? "Alex" : "Jordan"} feels: ${m.label}`);
+  }
+  const moves = $("coach-moves");
+  if (moves) moves.innerHTML = sig.moves.map(m => `<li class="${m.done ? "done" : ""}"><span class="move-mark" aria-hidden="true">${m.done ? "\u2713" : "\u25CB"}</span><span>${esc(m.label)}${m.done ? "" : '<span class="sr-only"> (not yet)</span>'}</span></li>`).join("");
+  const bal = $("coach-balance");
+  if (bal) bal.textContent = sig.balance.alex + sig.balance.jordan === 0 ? "" : `You have spoken to Alex ${sig.balance.alex} time${sig.balance.alex === 1 ? "" : "s"} and Jordan ${sig.balance.jordan}.`;
+  const warn = $("coach-warning");
+  if (warn) warn.textContent = sig.warning || "";
+  const sum = $("residents-summary");
+  if (sum) sum.textContent = session.turnCount === 0 ? "Alex and Jordan: read their situations" : `Alex: ${sig.moods.alex.label} \u00B7 Jordan: ${sig.moods.jordan.label}`;
 }
 function updateProgress(state = "exploring") {
+  updateSidebar();
   const { percent, hint } = conversationProgress(state, session.openness, session.turnCount);
   const fill = $("progress-fill"), track = $("progress-track"), hintEl = $("progress-hint");
   if (fill) fill.style.width = `${percent}%`;
@@ -576,6 +607,7 @@ async function startSession() {
   DOM.setup.classList.add("hidden");
   DOM.chatView.classList.remove("hidden");
   DOM.debriefView.classList.add("hidden");
+  chatScreen(true);
   DOM.chatLog.innerHTML = "";
   DOM.graderCards.innerHTML = "";
   DOM.consolidated.innerHTML = "";
@@ -796,6 +828,7 @@ async function end() {
   track("session_ended", { turns: session.turnCount, reason: isTurnCapReached(session.turnCount, MAX_TURNS) ? "turn_cap" : "ra_ended" });
 
   DOM.chatView.classList.add("hidden");
+  chatScreen(false);
   DOM.debriefView.classList.remove("hidden");
   DOM.debriefRaName.textContent = session.raName;
   DOM.debriefTopic.textContent = topicLabel(session.topic);
@@ -964,6 +997,7 @@ if (hintBtn) {
 DOM.restartBtn.addEventListener("click", () => {
   DOM.setup.classList.remove("hidden");
   DOM.chatView.classList.add("hidden");
+  chatScreen(false);
   DOM.debriefView.classList.add("hidden");
   DOM.chatLog.innerHTML = "";
   DOM.residentCards.innerHTML = "";
