@@ -162,7 +162,10 @@ test("the hidden practice mode setting stays hidden: its display rule must not o
 
 test("the chat is an app-style screen: only the conversation scrolls, the message box and footer line are fixed, and the signed-in line moves into the footer", () => {
   const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
-  assert.match(css, /body\.in-chat\s*\{[^}]*overflow:\s*hidden/);
+  assert.match(css, /\nbody\s*\{[^}]*overflow:\s*hidden/); // the page itself never scrolls, on any screen
+  assert.match(css, /\n\.app\s*\{[^}]*overflow-y:\s*auto/); // setup and debrief scroll inside .app
+  assert.match(css, /body\.in-chat \.app\s*\{\s*overflow:\s*hidden/);
+  assert.match(css, /\.app-footer\s*\{[^}]*flex:\s*0 0 auto/); // the footer bar is always visible
   assert.match(css, /\.chat-log\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(css, /body\.in-chat \.chat-footer\s*\{\s*display:\s*flex/);
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
@@ -170,5 +173,5 @@ test("the chat is an app-style screen: only the conversation scrolls, the messag
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.match(app, /function chatScreen\(on\)/);
   assert.match(app, /slot\.append\(bar, build\)/); // signed in line and build label into the footer
-  assert.match(app, /document\.body\.append\(bar, build\)/); // and back out
+  assert.match(app, /\$\("app-footer"\)\.append\(bar, build\)/); // and back out to the footer bar
 });

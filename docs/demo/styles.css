@@ -47,14 +47,24 @@ body {
   background: var(--wall);
   color: var(--ink);
   line-height: 1.55;
-  min-height: 100vh;
+  /* The page is exactly the window high and never scrolls. Content scrolls inside .app, and the footer bar stays at the bottom. */
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* === Layout === */
 
 .app {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
+body.in-chat .app { overflow: hidden; }
 
 .hidden { display: none !important; }
 
@@ -64,7 +74,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  flex: 1 0 auto;
   padding: var(--space-lg);
 }
 
@@ -478,7 +488,8 @@ body {
   max-width: 800px;
   margin: 0 auto;
   padding: var(--space-xl) var(--space-lg);
-  min-height: 100vh;
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 .debrief-header {
@@ -651,6 +662,7 @@ body {
 }
 
 .demo-banner {
+  flex: 0 0 auto;
   background: var(--system-bg);
   color: var(--system);
   border-bottom: 1px solid var(--system-line);
@@ -785,17 +797,15 @@ body {
 
 
 /* Chat screen: exactly the height of the window. Only the conversation (and the sidebar, on its own) scrolls. */
-body.in-chat { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
-body.in-chat .app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 body.in-chat .chat-view { flex: 1; min-height: 0; }
 .chat-toolbar { flex: 0 0 auto; }
 
 /* The footer line under the message box: who is signed in, sign out, and the build. The page's own user-bar and build footer move in here. */
 .chat-footer { flex: 0 0 auto; display: none; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 0 var(--space-lg) var(--space-sm); background: var(--paper); font-size: 12px; color: var(--muted); }
 body.in-chat .chat-footer { display: flex; }
-.chat-footer .user-bar, .chat-footer .build-footer { display: flex; gap: 10px; padding: 0; margin: 0; text-align: left; font-size: 12px; }
-.chat-footer .user-bar[hidden], .chat-footer .build-footer[hidden] { display: none; }
-.chat-footer .user-bar a { padding: 2px 4px; }
+.chat-footer .user-bar, .chat-footer .build-footer, .app-footer .user-bar, .app-footer .build-footer { display: flex; gap: 10px; padding: 0; margin: 0; text-align: left; font-size: 12px; }
+.chat-footer .user-bar[hidden], .chat-footer .build-footer[hidden], .app-footer .user-bar[hidden], .app-footer .build-footer[hidden] { display: none; }
+.chat-footer .user-bar a, .app-footer .user-bar a { padding: 2px 4px; }
 @media (max-width: 760px) {
   body.in-chat .sidebar { flex: 0 0 auto; max-height: 42vh; max-height: 42dvh; }
   /* Phones: keep the stacked sidebar to two slim rows so the conversation gets the screen. */
@@ -803,3 +813,7 @@ body.in-chat .chat-footer { display: flex; }
   .sidebar-header h2 { display: none; }
   .session-meta { margin-top: 0; }
 }
+
+/* The footer bar at the bottom of every other screen (setup, debrief): signed-in line, sign out, build. It is always visible: it does not scroll away. */
+.app-footer { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 6px var(--space-md); background: var(--paper); border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.app-footer:empty, .app-footer:not(:has(> :not([hidden]))) { display: none; }
