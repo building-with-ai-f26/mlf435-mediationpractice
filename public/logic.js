@@ -515,7 +515,7 @@ export function shortNeed(text) {
 // A feeling word in what a resident said, in the words a mediator would use to reflect it back. null if none is clear.
 // Plain keywords, no model: the button text is a suggestion the RA edits, not something the app claims to know.
 const FEELINGS = [
-  [/\b(exhaust|tired|worn|sleep|running on empty|drained)/i, "worn out"],
+  [/\b(i'm|i am|i feel|feeling|so|really|just|completely|totally)\s+(exhausted|drained|worn (out|down)|tired)|running on empty|exhausting\b/i, "worn out"],
   [/\b(attack|blam|judg|picked on|one-sided|singled)/i, "blamed"],
   [/\b(unheard|not heard|ignor|nobody (is )?listen|no one (is )?listen|not listening|dismiss)/i, "unheard"],
   [/\b(disrespect|not respect|no respect)/i, "disrespected"],
@@ -525,8 +525,10 @@ const FEELINGS = [
   [/\b(uncomfortable|embarrass|awkward|ashamed)/i, "uncomfortable"],
   [/\b(hurt|upset|sad\b|lonely)/i, "hurt"],
 ];
-export function feelingIn(text) {
-  const t = String(text ?? "");
+export function feelingIn(text, otherName = "") {
+  // Sentences about the other resident ("I hear Alex needs sleep") are not this resident's own feeling, so they are skipped.
+  const other = String(otherName || "").toLowerCase();
+  const t = String(text ?? "").split(/(?<=[.!?])\s+/).filter(x => !(other && x.toLowerCase().includes(other)) && !/\bi hear\b/i.test(x)).join(" ");
   for (const [re, word] of FEELINGS) if (re.test(t)) return word;
   return null;
 }
@@ -544,13 +546,14 @@ export function nextSuggestion({ resident, name, level, turns = [], planFit = nu
   const reflectedRecently = tags.slice(-2).some(t => to(t) && (t.reflective_listening || t.validates_feeling));
   const last = tags.length ? tags[tags.length - 1] : null;
   const planOnTable = !!(last && last.proposal_on_table);
-  const feeling = feelingIn(lastResidentText);
+  const feeling = feelingIn(lastResidentText, resident === "alex" ? "Jordan" : "Alex");
   const seen = new Set(used);
   const open = [
     { id: "give_up", when: lvl >= 3, label: "Ask what they'd give up", text: `${n}, what would you be willing to try or give up?` },
     { id: "live_with", when: lvl >= 2, label: "Ask what they can live with", text: `${n}, what matters most to you, and what could you live with?` },
     { id: "trial", when: lvl >= 2 && !planOnTable, label: "Propose a two week trial", text: `${n}, what if we tried an arrangement for two weeks and then checked in?` },
     { id: "matters_most", when: lvl >= 1, label: "Ask what matters most", text: `${n}, it sounds like this has been hard. What matters most to you here?` },
+    { id: "reflect_back", when: lvl <= 1 && !tags.some(t => to(t) && (t.reflective_listening || t.validates_feeling)), label: "Reflect what you heard", text: `${n}, what I'm hearing is that this has been hard on you. Did I get that right?` },
     { id: "example", when: true, label: "Ask for an example", text: `${n}, can you give me an example of when this was hardest?` },
   ];
   const rules = [

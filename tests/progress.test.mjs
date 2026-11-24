@@ -174,7 +174,9 @@ test("feelingIn finds a feeling to reflect, in a mediator's words, or null", () 
 test("nextSuggestion follows the conversation: first question, then reflect a feeling, then questions by trust, never the same one twice", () => {
   assert.equal(sg().id, "first_ask");
   const talked = [RT({ addresses: "alex", open_question: true })];
-  assert.equal(sg({ turns: talked }).id, "example"); // trust 0, nothing to reflect
+  assert.equal(sg({ turns: talked }).id, "reflect_back"); // trust 0 and not reflected yet
+  const reflected = [RT({ addresses: "alex", open_question: true }), RT({ addresses: "alex", reflective_listening: true })];
+  assert.equal(sg({ turns: reflected }).id, "example"); // trust 0, already reflected
   assert.equal(sg({ turns: talked, level: 1 }).id, "matters_most");
   assert.equal(sg({ turns: talked, level: 2 }).id, "live_with");
   assert.equal(sg({ turns: talked, level: 3 }).id, "give_up");
@@ -211,4 +213,24 @@ test("nextSuggestion labels are short and the text is a sentence that names the 
   const cases = [sg(), sg({ turns: [RT({ addresses: "alex" })], level: 3 }), sg({ turns: [RT({ addresses: "alex", proposal_on_table: true })], planFit: "misses" }), sg({ turns: [RT({ addresses: "alex" })], lastResidentText: "I feel unheard" }), sg({ resolution: "resolved", turns: [RT({ addresses: "both" })] })];
   for (const c of cases) { assert.ok(c.label.length <= 30, c.label); assert.match(c.text, /Alex/); assert.ok(c.text.length > 12); }
   assert.match(nextSuggestion({ resident: "jordan", name: "Jordan", level: 0 }).text, /^Jordan,/);
+});
+
+test("feelingIn does not call a resident worn out for mentioning someone else's sleep", () => {
+  assert.equal(feelingIn("I hear Alex needs sleep before the 7am lab, and I want to help."), null);
+  assert.equal(feelingIn("Alex gets four hours of sleep, I know."), null);
+  assert.equal(feelingIn("I'm really tired and I need this sorted."), "worn out");
+  assert.equal(feelingIn("I'm exhausted."), "worn out");
+});
+
+test("feelingIn skips sentences about the other resident or starting 'I hear'", () => {
+  assert.equal(feelingIn("Alex, I know you're running on empty. My group meets at 11.", "Alex"), null);
+  assert.equal(feelingIn("I hear you're exhausting yourself. I need the room.", "Alex"), null);
+  assert.equal(feelingIn("Sam, I'm exhausted. Alex has a lab.", "Alex"), "worn out");
+});
+
+test("nextSuggestion nudges toward reflecting when the RA has not reflected to this resident at low trust", () => {
+  const asked = [RT({ addresses: "alex", open_question: true })];
+  assert.equal(sg({ turns: asked }).id, "reflect_back");
+  assert.equal(sg({ turns: [...asked, RT({ addresses: "alex", reflective_listening: true })] }).id, "example");
+  assert.equal(sg({ turns: asked, level: 2 }).id, "live_with"); // higher trust: normal questions
 });
