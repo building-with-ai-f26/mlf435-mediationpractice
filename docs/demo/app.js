@@ -128,18 +128,6 @@ fetch("/healthz").then(r => r.ok ? r.json() : null).then(h => {
   if (label && el) { el.textContent = label; el.hidden = false; }
 }).catch(() => {});
 
-// Topic-neutral examples. (The old list was about quiet hours and late classes, which made no sense in the other five topics.)
-const HINTS = [
-  "Try asking: 'What would help you feel comfortable with this?'",
-  "Try asking: 'Can you tell me more about what a normal day looks like for you?'",
-  "Try asking: 'What is one small change each of you could try this week?'",
-  "Try asking: 'Can you both describe what a good compromise would look like?'",
-  "Try saying: 'I hear both of you. Let me make sure I understand...' then restate both sides.",
-  "Try asking: 'Alex, what did you hear Jordan say?' and then the same for Jordan.",
-  "Try asking: 'What would each of you be willing to try or give up?'",
-  "Try proposing: 'What if we try this for two weeks and check in after?' once both of you have been heard.",
-];
-
 const $ = id => document.getElementById(id);
 
 const DOM = {
@@ -1028,17 +1016,6 @@ DOM.endBtn.addEventListener("click", () => {
   disarmEnd();
   end();
 });
-
-const hintBtn = document.getElementById("hint-btn");
-if (hintBtn) {
-  hintBtn.addEventListener("click", () => {
-    track("hint_clicked");
-    const next = ($("progress-hint")?.textContent || "").trim();
-    const example = HINTS[Math.floor(Math.random() * HINTS.length)];
-    DOM.chatLog.appendChild(sysEl(`Hint: ${next ? next + " " : ""}${example}`));
-    scrollToBottom();
-  });
-}
 
 DOM.restartBtn.addEventListener("click", () => {
   DOM.setup.classList.remove("hidden");
