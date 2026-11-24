@@ -488,37 +488,34 @@ export function sidebarSignals(turns = [], openness = {}) {
   const any = pred => tagged.some(pred);
   const mood = r => { const level = clamp(Number.isFinite(openness[r]) ? openness[r] : 0); return { level, label: MOODS[level] }; };
   const moves = [
-    { id: "ground_rules", label: "Set ground rules", done: any(t => t.ground_rules) },
-    { id: "invite_alex", label: "Invited Alex to share", done: any(t => to(t, "alex") && (t.invites_to_share || t.open_question)) },
-    { id: "invite_jordan", label: "Invited Jordan to share", done: any(t => to(t, "jordan") && (t.invites_to_share || t.open_question)) },
-    { id: "reflect_alex", label: "Reflected Alex's feelings", done: any(t => to(t, "alex") && (t.reflective_listening || t.validates_feeling)) },
-    { id: "reflect_jordan", label: "Reflected Jordan's feelings", done: any(t => to(t, "jordan") && (t.reflective_listening || t.validates_feeling)) },
-    { id: "plan", label: "Put a plan on the table", done: any(t => t.proposal_on_table) },
-    { id: "plan_specifics", label: "Settled who, what and when", done: any(t => t.plan_has_specifics) },
+    { id: "ground_rules", label: "Ground rules", done: any(t => t.ground_rules) },
+    { id: "invite_alex", label: "Invited Alex", done: any(t => to(t, "alex") && (t.invites_to_share || t.open_question)) },
+    { id: "invite_jordan", label: "Invited Jordan", done: any(t => to(t, "jordan") && (t.invites_to_share || t.open_question)) },
+    { id: "reflect_alex", label: "Reflected Alex", done: any(t => to(t, "alex") && (t.reflective_listening || t.validates_feeling)) },
+    { id: "reflect_jordan", label: "Reflected Jordan", done: any(t => to(t, "jordan") && (t.reflective_listening || t.validates_feeling)) },
+    { id: "plan", label: "Plan on the table", done: any(t => t.proposal_on_table) },
+    { id: "plan_specifics", label: "Who, what, when", done: any(t => t.plan_has_specifics) },
   ];
   const balance = { alex: tagged.filter(t => to(t, "alex")).length, jordan: tagged.filter(t => to(t, "jordan")).length };
   const last = turns.length ? turns[turns.length - 1] && turns[turns.length - 1].tags : null;
   let warning = null;
-  if (last && last.takes_side) warning = "Your last message may have sounded like taking a side.";
-  else if (last && last.lectures) warning = "Your last message may have sounded like a lecture.";
-  else if (last && last.proposes_solution && Math.min(mood("alex").level, mood("jordan").level) < 1) warning = "A solution came before both residents felt heard.";
+  if (last && last.takes_side) warning = "That may have sounded like taking a side.";
+  else if (last && last.lectures) warning = "That may have sounded like a lecture.";
+  else if (last && last.proposes_solution && Math.min(mood("alex").level, mood("jordan").level) < 1) warning = "A solution came before both felt heard.";
   return { moods: { alex: mood("alex"), jordan: mood("jordan") }, moves, balance, warning, movesDone: moves.filter(m => m.done).length };
 }
 
 // ---- Resident cards ----
-// A short quote of what a resident last said: whole words only, an ellipsis when it was cut.
-export function shortQuote(text, max = 120) {
-  const t = String(text ?? "").replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  const cut = t.slice(0, max);
-  const at = cut.lastIndexOf(" ");
-  return (at > max / 2 ? cut.slice(0, at) : cut).replace(/[\s,.;:!?-]+$/, "") + "...";
+// A need or a way to bend, shortened for the narrow sidebar: the reason after "because" is dropped (the chat already carries it) and the
+// full stop goes. Everything else is kept word for word. Display only; the prompts use the full text.
+export function shortNeed(text) {
+  return String(text ?? "").replace(/,?\s+because\b.*$/i, "").replace(/[\s.]+$/, "").trim();
 }
 
 // What one resident's card shows, from the trust level and the latest tagger labels. Display only.
 // What they SAY (the stance) is always on the card. What they NEED unlocks at trust 2 and where they could BEND at trust 3,
 // the way a real mediator learns positions first and interests later. profile: { name, mustHaves, flexible }.
-export function residentCardState({ resident, profile, level, previousLevel = null, lastTags = null, lastText = "" }) {
+export function residentCardState({ resident, profile, level, previousLevel = null, lastTags = null }) {
   const lvl = clamp(Number.isFinite(level) ? level : 0);
   const n = profile?.name || (resident === "alex" ? "Alex" : "Jordan");
   const needsUnlocked = lvl >= 2, bendUnlocked = lvl >= 3;
@@ -532,13 +529,12 @@ export function residentCardState({ resident, profile, level, previousLevel = nu
   return {
     level: lvl,
     needsUnlocked, bendUnlocked,
-    needs: needsUnlocked ? (profile?.mustHaves || []) : [],
-    flexible: bendUnlocked ? (profile?.flexible || []) : [],
+    needs: needsUnlocked ? (profile?.mustHaves || []).map(shortNeed) : [],
+    flexible: bendUnlocked ? (profile?.flexible || []).map(shortNeed) : [],
     // The plan check only appears once the needs are visible, so it never gives them away early.
     planFit: planOnTable && needsUnlocked ? (lastTags.meets_needs && lastTags.meets_needs[resident] ? "fits" : "misses") : null,
     trend: previousLevel === null || previousLevel === undefined ? null : lvl > previousLevel ? "warmer" : lvl < previousLevel ? "cooler" : null,
     ask: ASK[lvl],
-    said: lastText ? shortQuote(lastText, 120) : null,
   };
 }
 

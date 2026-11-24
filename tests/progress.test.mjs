@@ -118,17 +118,8 @@ test("sidebarSignals: plan moves, and warnings only for the latest message", () 
   assert.equal(sidebarSignals([turn({ takes_side: true }), turn({ addresses: "both" })], {}).warning, null); // old slips are not repeated
 });
 
-import { residentCardState, shortQuote } from "../public/logic.js";
+import { residentCardState } from "../public/logic.js";
 const PROFILE = { name: "Alex", mustHaves: ["quiet by 10:30"], flexible: ["weekends can run later"] };
-
-test("shortQuote keeps whole words, adds an ellipsis only when cut, and copes with empty input", () => {
-  assert.equal(shortQuote("Short one."), "Short one.");
-  const long = "I really need the room quiet by half past ten on weeknights because my lab starts at seven and I cannot function on four hours of sleep";
-  const q = shortQuote(long, 60);
-  assert.ok(q.endsWith("...") && q.length <= 64 && !/\bwee\.\.\.$/.test(q));
-  assert.equal(shortQuote(null), "");
-  assert.equal(shortQuote("  lots   of   space  "), "lots of space");
-});
 
 test("residentCardState: needs unlock at trust 2, bending room at trust 3, and nothing is given away earlier", () => {
   const at = level => residentCardState({ resident: "alex", profile: PROFILE, level });
@@ -149,14 +140,23 @@ test("residentCardState: the plan check shows only when a plan is on the table a
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 3, lastTags: null }).planFit, null);
 });
 
-test("residentCardState: trend, the last thing said, and a different suggested question at each trust level", () => {
+test("residentCardState: trend and a different suggested question at each trust level", () => {
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 1 }).trend, "warmer");
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0, previousLevel: 1 }).trend, "cooler");
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 2 }).trend, null);
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2 }).trend, null);
-  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0 }).said, null);
-  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0, lastText: "I am tired." }).said, "I am tired.");
   const asks = [0, 1, 2, 3].map(l => residentCardState({ resident: "alex", profile: PROFILE, level: l }).ask);
   assert.equal(new Set(asks.map(a => a.text)).size, 4);
   assert.ok(asks.every(a => a.text.startsWith("Alex,") && a.label.includes("Alex")));
+});
+
+import { shortNeed } from "../public/logic.js";
+test("shortNeed drops only the reason after 'because' and the full stop", () => {
+  assert.equal(shortNeed("Lights out and the room quiet by 10:30pm on weeknights, because of a 7am lab."), "Lights out and the room quiet by 10:30pm on weeknights");
+  assert.equal(shortNeed("No loud noise or music in the room before 7am."), "No loud noise or music in the room before 7am");
+  assert.equal(shortNeed("No overnight guests on weeknights, because of early classes."), "No overnight guests on weeknights");
+  assert.equal(shortNeed("Alex gets advance notice before any overnight guest."), "Alex gets advance notice before any overnight guest");
+  assert.equal(shortNeed("The study group keeps meeting until 11:30pm on Tuesdays and Thursdays."), "The study group keeps meeting until 11:30pm on Tuesdays and Thursdays");
+  assert.equal(shortNeed(null), "");
+  assert.deepEqual(residentCardState({ resident: "alex", profile: { name: "Alex", mustHaves: ["Quiet by 10, because of a lab."], flexible: ["Weekends."] }, level: 3 }).needs, ["Quiet by 10"]);
 });

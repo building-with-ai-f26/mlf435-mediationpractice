@@ -179,7 +179,7 @@ body.in-chat .app { overflow: hidden; }
 }
 
 .sidebar {
-  width: 280px;
+  width: 300px;
   flex-shrink: 0;
   background: var(--paper);
   border-right: 1px solid var(--line);
@@ -649,8 +649,9 @@ body.in-chat .app { overflow: hidden; }
   .chat-view { flex-direction: column; }
   /* Stacked layout: a sticky 100vh sidebar would sit over the chat and its buttons. */
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); position: static; height: auto; }
-  .resident-cards { flex-direction: row; overflow-x: auto; }
-  .resident-card { min-width: 260px; }
+  /* Phones: the two cards stack inside the fold-out (a sideways row cut the second card off). */
+  .resident-cards { flex-direction: column; }
+  .resident-card { min-width: 0; }
   .debrief-view { padding: var(--space-md); }
 }
 
@@ -820,14 +821,9 @@ body.in-chat .chat-footer { display: flex; }
 
 
 /* Resident cards: the changing parts */
-.card-side summary { cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 2px 0; }
-.card-side[open] summary { margin-bottom: var(--space-xs); }
 .mood-trend { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; }
 .mood-trend.warmer { background: var(--ra-bg); color: var(--ra); border: 1px solid var(--ra-line); }
 .mood-trend.cooler { background: var(--alex-bg); color: var(--alex); border: 1px solid var(--alex-line); }
-.card-said { margin-top: var(--space-sm); font-size: 13px; }
-.said-label, .needs-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
-.card-said q { display: block; font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
 .card-needs { margin-top: var(--space-sm); font-size: 13px; border-top: 1px dashed var(--line); padding-top: var(--space-sm); }
 .card-needs ul { margin: 0 0 var(--space-sm); padding-left: 18px; }
 .card-needs li { margin-bottom: 2px; }
@@ -854,7 +850,7 @@ body.in-chat .chat-footer { display: flex; }
   .ask-chip, .play-btn { min-height: 40px; }
   .user-bar a, .chat-footer .user-bar a, .app-footer .user-bar a { padding: 8px 8px; }
   /* Padding, not display: flex, so the summaries keep their disclosure triangle and the wide layout can still hide the Residents one. */
-  .card-side summary, .conversation summary { padding-top: 10px; padding-bottom: 10px; }
+  .conversation summary, .bend summary { padding-top: 8px; padding-bottom: 8px; }
   .residents-summary { padding-top: 12px; padding-bottom: 12px; }
 }
 
@@ -874,4 +870,60 @@ body.in-chat .chat-footer { display: flex; }
   .chat-footer { padding-bottom: 2px; }
   .chat-log { padding-top: var(--space-sm); padding-bottom: var(--space-sm); }
   .setup-view { align-items: flex-start; }
+}
+
+.needs-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
+
+/* COMPACT SIDEBAR. Everything in it has to fit on a laptop screen with no scrolling, with both cards at their fullest.
+   (The intros in the chat already say what each resident thinks, so the cards only add what changes.) */
+.sidebar-header { padding: 8px var(--space-md); }
+.sidebar-header h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; } /* "Residents" stays for screen readers */
+.session-meta { margin-top: 0; }
+.resident-cards { padding: 10px; gap: 8px; overflow: visible; }
+.resident-card { padding: 8px 10px; }
+.resident-card .card-header { margin-bottom: 2px; align-items: baseline; flex-wrap: wrap; gap: 0 8px; }
+.resident-card .card-name { font-size: 15px; }
+.card-meta { font-size: 11px; color: var(--muted); }
+.card-mood { margin: 0 0 2px; }
+.card-summary { font-size: 12px; color: var(--ink); margin-bottom: 2px; }
+.card-summary[hidden] { display: none; }
+.card-needs { margin-top: 4px; padding-top: 4px; font-size: 12px; line-height: 1.35; }
+.card-needs ul { margin: 0 0 4px; padding-left: 16px; }
+.card-needs li { margin-bottom: 1px; }
+.locked-note { display: block; margin: 0 0 2px; font-size: 12px; }
+.bend { margin: 2px 0 0; }
+.bend summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--navy); }
+.bend[open] summary { margin-bottom: 2px; }
+.card-fit { margin-top: 2px; font-size: 12px; }
+.ask-chip { margin-top: 6px; padding: 5px 9px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coach { padding: 8px 10px 10px; }
+.coach h3 { font-size: 11px; margin: 0 0 6px; }
+.coach-live { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.coach-moves { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; font-size: 12px; }
+.coach-balance, .coach-warning { margin-top: 6px; font-size: 12px; }
+
+/* "Where they could bend" opens as a floating panel over the card below it, so opening it never makes the sidebar taller. */
+.resident-card { position: relative; }
+.bend { position: relative; }
+.bend ul { position: absolute; left: 0; right: 0; top: 100%; z-index: 6; margin: 2px 0 0; padding: 8px 10px 8px 24px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 6px 18px rgba(26, 26, 26, 0.14); }
+.coach-moves li { line-height: 1.25; }
+
+/* The suggested question is a small "Ask" button on the name row, so a card is one row shorter. */
+.resident-card .card-header { justify-content: space-between; flex-wrap: nowrap; align-items: center; }
+.ask-chip { margin: 0; width: auto; flex: 0 0 auto; padding: 2px 12px; font-size: 12px; border-radius: 12px; }
+.card-needs { border-top: 0; margin-top: 2px; padding-top: 0; }
+.card-needs ul { line-height: 1.3; }
+.coach { padding-top: 6px; }
+
+/* Short laptop windows (about 680 px of page or less): slightly tighter spacing so the sidebar still never scrolls */
+@media (max-height: 680px) and (min-width: 761px) {
+  .sidebar-header { padding: 5px 12px; }
+  .resident-cards { padding: 6px; gap: 6px; }
+  .resident-card { padding: 6px 8px; }
+  .card-mood { margin: 0; }
+  .card-summary { font-size: 11.5px; }
+  .coach { padding: 4px 8px 6px; }
+  .coach h3 { margin-bottom: 4px; }
+  .coach-moves { gap: 2px 8px; }
+  .coach-balance, .coach-warning { margin-top: 4px; }
 }

@@ -79,3 +79,17 @@ Chrome, mock mode, signed-in line injected, the whole flow clicked through (setu
 
 - **Hint button removed.** After the audit it only repeated the progress hint that is always visible in the toolbar ("Both are listening. Ask what each would be willing to try or give up."), plus a random example. The button, its example list and its `hint_clicked` analytics event are gone; the toolbar has the progress bar with its hint, and End & Debrief. The suggested-question buttons on the resident cards cover the "what could I say" need.
 - **Tab icon** is the speaking head emoji (U+1F5E3), as an inline image. It is drawn from the system's emoji font, so it looks different on each platform; very old systems without that emoji show a blank square.
+
+## Seventh change: a sidebar that fits
+
+The sidebar scrolled on a laptop: long stance text on each card repeated what the chat intros already say, the "last said" quote repeated the conversation beside it, and the open bend lists made it taller still. Measured in Chrome (the height the content needs against the height the sidebar has, worst case: both residents fully unlocked, the plan check showing, a two line warning):
+
+| Window | Before | After |
+|---|---|---|
+| 1280x720 (demo banner on, 682 px of sidebar) | scrolled | content ends at 615, 67 px to spare |
+| 1366x640 (602 px of sidebar) | scrolled | content ends at 576, 26 px to spare |
+| 1440x900 | scrolled | 247 px to spare |
+
+What changed: no stance or "last said" on the cards (one summary line until your first message, then gone); needs shortened by dropping the "because ..." reason (the chat carries it); "where they could bend" is a floating panel that closes on an outside click or Escape; the suggested question is a small "Ask" button beside the name (its tooltip and accessible name say which question); the checklist is two columns with shorter labels; the "live signals" note moved into the heading; the sidebar is 300 px wide; and an extra tightening rule applies to windows under 680 px high. On phones the two cards now stack in the fold-out instead of sitting in a sideways row that cut the second one off.
+
+Not verified: how much a very long need text (a new topic with longer wording) would add, and whether dropping the reason from each need loses anything for a real user.
