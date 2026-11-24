@@ -1,4 +1,4 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, sidebarSignals, turnLabel, createConfirmGate, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, sidebarSignals, residentCardState, turnLabel, createConfirmGate, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession, difficultyLabel, topicLabel } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
@@ -390,23 +390,42 @@ let live = newLiveLog();
    CARDS
    ============================================================ */
 
+// The cards: what each resident says (always there, can be folded away), plus parts that change as the conversation does
+// (see updateSidebar): mood, the last thing they said, what they need (unlocked by trust), whether the plan fits, and a suggested question.
+let cardMemory = { alex: null, jordan: null }; // previous trust level and unlock state, to show "warmer" and to flash a new unlock
 function renderCards(profiles) {
-  DOM.residentCards.innerHTML = `
-    <div class="resident-card alex">
-      <div class="card-header"><span class="card-name">${profiles.alex.name}</span><span class="card-handle">${profiles.alex.handle}</span></div>
-      <div class="card-mood" id="mood-alex"></div>
-      <div class="card-meta">${profiles.alex.meta}</div>
-      <div class="card-trait">${profiles.alex.trait}</div>
-      <div class="card-stance">${profiles.alex.stance}</div>
-    </div>
-    <div class="resident-card jordan">
-      <div class="card-header"><span class="card-name">${profiles.jordan.name}</span><span class="card-handle">${profiles.jordan.handle}</span></div>
-      <div class="card-mood" id="mood-jordan"></div>
-      <div class="card-meta">${profiles.jordan.meta}</div>
-      <div class="card-trait">${profiles.jordan.trait}</div>
-      <div class="card-stance">${profiles.jordan.stance}</div>
-    </div>`;
+  cardMemory = { alex: null, jordan: null };
+  DOM.residentCards.innerHTML = ["alex", "jordan"].map(r => `
+    <div class="resident-card ${r}" id="card-${r}">
+      <div class="card-header"><span class="card-name">${esc(profiles[r].name)}</span><span class="card-handle">${esc(profiles[r].handle)}</span></div>
+      <div class="card-mood" id="mood-${r}"></div>
+      <details class="card-side" open>
+        <summary>Their side</summary>
+        <div class="card-meta">${esc(profiles[r].meta)}</div>
+        <div class="card-trait">${esc(profiles[r].trait)}</div>
+        <div class="card-stance">${esc(profiles[r].stance)}</div>
+      </details>
+      <div class="card-said" id="said-${r}"></div>
+      <div class="card-needs" id="needs-${r}"></div>
+      <div class="card-fit" id="fit-${r}" role="status"></div>
+      <button type="button" class="ask-chip" id="ask-${r}"></button>
+    </div>`).join("");
 }
+// "Their side" is already in the chat intros, so after the first message it folds away to make room for the live parts.
+// A card the user has opened or closed themselves is left alone.
+DOM.residentCards.addEventListener("click", ev => { const sum = ev.target.closest(".card-side summary"); if (sum) sum.parentElement.dataset.touched = "1"; });
+function foldTheirSide() {
+  if (session.turnCount < 1) return;
+  document.querySelectorAll(".card-side:not([data-touched])").forEach(d => { d.open = false; });
+}
+// Clicking a suggested question puts it in the message box for the RA to edit and send (it never sends by itself).
+DOM.residentCards.addEventListener("click", ev => {
+  const chip = ev.target.closest(".ask-chip");
+  if (!chip || DOM.raInput.disabled) return;
+  DOM.raInput.value = DOM.raInput.value.trim() ? `${DOM.raInput.value.trim()} ${chip.dataset.text}` : chip.dataset.text;
+  autoGrow();
+  DOM.raInput.focus();
+});
 
 /* ============================================================
    UI HELPERS
@@ -486,6 +505,31 @@ function updateSidebar() {
     el.innerHTML = `<span class="mood-meter" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="${i <= m.level ? "on" : ""}"></i>`).join("")}</span><span class="mood-label">${esc(m.label)}</span>`;
     el.setAttribute("aria-label", `${r === "alex" ? "Alex" : "Jordan"} feels: ${m.label}`);
   }
+  const lastTags = live.turns.length ? live.turns[live.turns.length - 1].tags : null;
+  for (const r of ["alex", "jordan"]) {
+    const prof = session.profiles?.[r]; if (!prof || !$(`card-${r}`)) continue;
+    const name = prof.name, mem = cardMemory[r];
+    const lastMsg = [...session.turnHistory].reverse().find(h => h.sender === name);
+    const st = residentCardState({ resident: r, profile: prof, level: sig.moods[r].level, previousLevel: mem ? mem.level : null, lastTags, lastText: lastMsg ? lastMsg.text : "" });
+    const trend = $(`mood-${r}`)?.querySelector(".mood-label");
+    if (trend && st.trend) trend.insertAdjacentHTML("afterend", `<span class="mood-trend ${st.trend}">${st.trend}</span>`);
+    $(`said-${r}`).innerHTML = st.said ? `<span class="said-label">${esc(name)} last said</span><q>${esc(st.said)}</q>` : `<span class="said-label">Waiting to hear from ${esc(name)}</span>`;
+    const needs = $(`needs-${r}`), justUnlocked = mem && ((st.needsUnlocked && !mem.needs) || (st.bendUnlocked && !mem.bend));
+    needs.innerHTML = (st.needsUnlocked
+      ? `<span class="needs-label">What ${esc(name)} needs</span><ul>${st.needs.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
+      : `<span class="needs-label locked">What ${esc(name)} needs</span><p class="locked-note">Locked. Earn ${esc(name)}'s trust to find out what matters most to them.</p>`)
+      + (st.bendUnlocked
+        ? `<span class="needs-label">Where ${esc(name)} could bend</span><ul>${st.flexible.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
+        : st.needsUnlocked ? `<p class="locked-note">Where ${esc(name)} could bend is still locked. Keep building trust.</p>` : "");
+    needs.classList.toggle("just-unlocked", !!justUnlocked);
+    const fit = $(`fit-${r}`);
+    fit.className = "card-fit" + (st.planFit ? ` ${st.planFit}` : "");
+    fit.textContent = st.planFit === "fits" ? `The plan on the table keeps what ${name} needs.` : st.planFit === "misses" ? `The plan on the table does not yet keep what ${name} needs.` : "";
+    const ask = $(`ask-${r}`);
+    ask.textContent = st.ask.label; ask.dataset.text = st.ask.text; ask.disabled = DOM.raInput.disabled;
+    cardMemory[r] = { level: st.level, needs: st.needsUnlocked, bend: st.bendUnlocked };
+  }
+  foldTheirSide();
   const moves = $("coach-moves");
   if (moves) moves.innerHTML = sig.moves.map(m => `<li class="${m.done ? "done" : ""}"><span class="move-mark" aria-hidden="true">${m.done ? "\u2713" : "\u25CB"}</span><span>${esc(m.label)}${m.done ? "" : '<span class="sr-only"> (not yet)</span>'}</span></li>`).join("");
   const bal = $("coach-balance");
@@ -516,6 +560,7 @@ function setInput(enabled) {
   DOM.sendBtn.disabled = !enabled;
   DOM.endBtn.disabled = !enabled;
   DOM.micBtn.disabled = !enabled || !micAvailable;
+  document.querySelectorAll(".ask-chip").forEach(b => { b.disabled = !enabled; });
   if (enabled) DOM.raInput.focus();
 }
 
@@ -664,6 +709,7 @@ async function startSession() {
     session.lastSpeaker = "Jordan";
     scrollToBottom();
 
+    updateSidebar(); // now both have spoken, the cards can quote them
     DOM.chatLog.appendChild(sysEl("Both residents have shared their sides. Begin mediating."));
     setInput(true);
   } catch (err) {
