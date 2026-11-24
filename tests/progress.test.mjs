@@ -117,3 +117,46 @@ test("sidebarSignals: plan moves, and warnings only for the latest message", () 
   assert.equal(sidebarSignals([turn({ proposes_solution: true })], { alex: 2, jordan: 2 }).warning, null); // fine once both have some trust
   assert.equal(sidebarSignals([turn({ takes_side: true }), turn({ addresses: "both" })], {}).warning, null); // old slips are not repeated
 });
+
+import { residentCardState, shortQuote } from "../public/logic.js";
+const PROFILE = { name: "Alex", mustHaves: ["quiet by 10:30"], flexible: ["weekends can run later"] };
+
+test("shortQuote keeps whole words, adds an ellipsis only when cut, and copes with empty input", () => {
+  assert.equal(shortQuote("Short one."), "Short one.");
+  const long = "I really need the room quiet by half past ten on weeknights because my lab starts at seven and I cannot function on four hours of sleep";
+  const q = shortQuote(long, 60);
+  assert.ok(q.endsWith("...") && q.length <= 64 && !/\bwee\.\.\.$/.test(q));
+  assert.equal(shortQuote(null), "");
+  assert.equal(shortQuote("  lots   of   space  "), "lots of space");
+});
+
+test("residentCardState: needs unlock at trust 2, bending room at trust 3, and nothing is given away earlier", () => {
+  const at = level => residentCardState({ resident: "alex", profile: PROFILE, level });
+  assert.deepEqual([at(0).needs, at(0).flexible], [[], []]);
+  assert.deepEqual([at(1).needs, at(1).flexible], [[], []]);
+  assert.deepEqual([at(2).needs, at(2).flexible], [["quiet by 10:30"], []]);
+  assert.deepEqual([at(3).needs, at(3).flexible], [["quiet by 10:30"], ["weekends can run later"]]);
+  assert.equal(at(9).level, 3); // clamped
+  assert.equal(at(-4).needsUnlocked, false);
+});
+
+test("residentCardState: the plan check shows only when a plan is on the table and the needs are unlocked", () => {
+  const tags = { proposal_on_table: true, meets_needs: { alex: true, jordan: false } };
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, lastTags: tags }).planFit, "fits");
+  assert.equal(residentCardState({ resident: "jordan", profile: { ...PROFILE, name: "Jordan" }, level: 3, lastTags: tags }).planFit, "misses");
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 1, lastTags: tags }).planFit, null); // locked: no hint
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 3, lastTags: { ...tags, proposal_on_table: false } }).planFit, null);
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 3, lastTags: null }).planFit, null);
+});
+
+test("residentCardState: trend, the last thing said, and a different suggested question at each trust level", () => {
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 1 }).trend, "warmer");
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0, previousLevel: 1 }).trend, "cooler");
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 2 }).trend, null);
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2 }).trend, null);
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0 }).said, null);
+  assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0, lastText: "I am tired." }).said, "I am tired.");
+  const asks = [0, 1, 2, 3].map(l => residentCardState({ resident: "alex", profile: PROFILE, level: l }).ask);
+  assert.equal(new Set(asks.map(a => a.text)).size, 4);
+  assert.ok(asks.every(a => a.text.startsWith("Alex,") && a.label.includes("Alex")));
+});

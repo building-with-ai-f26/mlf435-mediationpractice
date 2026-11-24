@@ -817,3 +817,32 @@ body.in-chat .chat-footer { display: flex; }
 /* The footer bar at the bottom of every other screen (setup, debrief): signed-in line, sign out, build. It is always visible: it does not scroll away. */
 .app-footer { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 6px var(--space-md); background: var(--paper); border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .app-footer:empty, .app-footer:not(:has(> :not([hidden]))) { display: none; }
+
+
+/* Resident cards: the changing parts */
+.card-side summary { cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 2px 0; }
+.card-side[open] summary { margin-bottom: var(--space-xs); }
+.mood-trend { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; }
+.mood-trend.warmer { background: var(--ra-bg); color: var(--ra); border: 1px solid var(--ra-line); }
+.mood-trend.cooler { background: var(--alex-bg); color: var(--alex); border: 1px solid var(--alex-line); }
+.card-said { margin-top: var(--space-sm); font-size: 13px; }
+.said-label, .needs-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
+.card-said q { display: block; font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+.card-needs { margin-top: var(--space-sm); font-size: 13px; border-top: 1px dashed var(--line); padding-top: var(--space-sm); }
+.card-needs ul { margin: 0 0 var(--space-sm); padding-left: 18px; }
+.card-needs li { margin-bottom: 2px; }
+.needs-label.locked::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border: 2px solid var(--muted); border-radius: 2px; vertical-align: -1px; }
+.locked-note { margin: 0 0 var(--space-sm); color: var(--muted); font-size: 12px; }
+.card-needs.just-unlocked { animation: unlock-flash 1.6s ease-out 1; }
+@keyframes unlock-flash { 0% { background: var(--system-bg); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .card-needs.just-unlocked { animation: none; } }
+.card-fit { margin-top: var(--space-xs); font-size: 12px; font-weight: 600; }
+.card-fit:empty { display: none; }
+.card-fit.fits { color: var(--ra); }
+.card-fit.misses { color: var(--alex); }
+.ask-chip { margin-top: var(--space-sm); width: 100%; text-align: left; font: inherit; font-size: 12px; font-weight: 600; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; color: var(--navy); cursor: pointer; }
+.ask-chip:hover:not(:disabled) { background: var(--wall); border-color: var(--navy-muted); }
+.ask-chip:disabled { color: var(--muted); cursor: default; }
+.ask-chip:focus-visible { outline: 2px solid var(--navy-muted); outline-offset: 2px; }
+.card-mood { flex-wrap: wrap; row-gap: 2px; }
+.mood-label { white-space: nowrap; }

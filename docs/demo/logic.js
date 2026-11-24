@@ -505,6 +505,43 @@ export function sidebarSignals(turns = [], openness = {}) {
   return { moods: { alex: mood("alex"), jordan: mood("jordan") }, moves, balance, warning, movesDone: moves.filter(m => m.done).length };
 }
 
+// ---- Resident cards ----
+// A short quote of what a resident last said: whole words only, an ellipsis when it was cut.
+export function shortQuote(text, max = 120) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return (at > max / 2 ? cut.slice(0, at) : cut).replace(/[\s,.;:!?-]+$/, "") + "...";
+}
+
+// What one resident's card shows, from the trust level and the latest tagger labels. Display only.
+// What they SAY (the stance) is always on the card. What they NEED unlocks at trust 2 and where they could BEND at trust 3,
+// the way a real mediator learns positions first and interests later. profile: { name, mustHaves, flexible }.
+export function residentCardState({ resident, profile, level, previousLevel = null, lastTags = null, lastText = "" }) {
+  const lvl = clamp(Number.isFinite(level) ? level : 0);
+  const n = profile?.name || (resident === "alex" ? "Alex" : "Jordan");
+  const needsUnlocked = lvl >= 2, bendUnlocked = lvl >= 3;
+  const ASK = [
+    { label: `Ask how this has been for ${n}`, text: `${n}, what has this been like for you?` },
+    { label: `Ask what matters most to ${n}`, text: `${n}, it sounds like this has been hard. What matters most to you here?` },
+    { label: `Ask what ${n} could live with`, text: `${n}, what matters most to you, and what could you live with?` },
+    { label: `Ask what ${n} would try or give up`, text: `${n}, what would you be willing to try or give up?` },
+  ];
+  const planOnTable = !!(lastTags && lastTags.proposal_on_table);
+  return {
+    level: lvl,
+    needsUnlocked, bendUnlocked,
+    needs: needsUnlocked ? (profile?.mustHaves || []) : [],
+    flexible: bendUnlocked ? (profile?.flexible || []) : [],
+    // The plan check only appears once the needs are visible, so it never gives them away early.
+    planFit: planOnTable && needsUnlocked ? (lastTags.meets_needs && lastTags.meets_needs[resident] ? "fits" : "misses") : null,
+    trend: previousLevel === null || previousLevel === undefined ? null : lvl > previousLevel ? "warmer" : lvl < previousLevel ? "cooler" : null,
+    ask: ASK[lvl],
+    said: lastText ? shortQuote(lastText, 120) : null,
+  };
+}
+
 // The words next to the message box. n of max messages sent, with a nudge for the last two.
 export function turnLabel(turnCount, max) {
   const n = Math.max(0, Math.min(turnCount, max));

@@ -43,3 +43,15 @@ Not verified: the grading step list in a live session (mock grading is instant, 
 ## Fourth change: the page never scrolls
 
 Found by measuring each screen at 1280x800, 390x844 and 1280x520 with the signed-in line switched on: the chat was already locked, but the **setup screen** (911 px of content in an 800 px window) and the **debrief** (2,814 px) scrolled as whole pages, so "Signed in as ... / Sign out / Build ..." sat below the fold. Now `body` is exactly the window high with no page scroll; setup and debrief scroll inside the content area; a footer bar with the signed-in line, Sign out and the build label is always visible on those screens, and during a chat the same line sits under the message box. After the change all nine measurements (three screens at three sizes) show no page scroll and the footer line visible without scrolling.
+
+## Fifth change: live resident cards
+
+The two resident cards were the last static part of the sidebar (name, handle, age, one trait line, one stance line, never changing). They now teach the difference between a position (what someone says) and an interest (what they need), which is the core mediation skill:
+- **What they say** stays on the card from the start, and folds away after your first message.
+- **What they need** is locked until the resident trusts you (level 2: "Open to options"); **where they could bend** unlocks at level 3. The newly unlocked section flashes once. Checked in Chrome: locked at the start, the two needs listed after four reflective messages.
+- **The last thing they said**, quoted, so you do not scroll up to remember their position.
+- **Mood trend**: a "warmer" or "cooler" note when trust changed on the last turn.
+- **Plan check**: once a plan is on the table and the needs are visible, each card says whether the plan keeps that resident's needs.
+- **Suggested question** that changes with trust (how has this been, what matters most, what could you live with, what would you try or give up). Clicking it puts the text in the message box to edit; it never sends.
+
+Not verified: how this feels over a real 15-turn session with live residents, whether unlocking at fixed trust levels matches what live residents actually reveal in the chat (they state needs in their own words and sometimes earlier or later), and screen reader behaviour.
