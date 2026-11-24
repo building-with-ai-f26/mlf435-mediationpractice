@@ -512,29 +512,77 @@ export function shortNeed(text) {
   return String(text ?? "").replace(/,?\s+because\b.*$/i, "").replace(/[\s.]+$/, "").trim();
 }
 
+// A feeling word in what a resident said, in the words a mediator would use to reflect it back. null if none is clear.
+// Plain keywords, no model: the button text is a suggestion the RA edits, not something the app claims to know.
+const FEELINGS = [
+  [/\b(exhaust|tired|worn|sleep|running on empty|drained)/i, "worn out"],
+  [/\b(attack|blam|judg|picked on|one-sided|singled)/i, "blamed"],
+  [/\b(unheard|not heard|ignor|nobody (is )?listen|no one (is )?listen|not listening|dismiss)/i, "unheard"],
+  [/\b(disrespect|not respect|no respect)/i, "disrespected"],
+  [/\b(overwhelm|stress|anxious|worr|on edge|panic)/i, "stressed"],
+  [/\b(angry|furious|mad\b|fed up|sick of)/i, "angry"],
+  [/\b(frustrat|annoy|irritat|tired of)/i, "frustrated"],
+  [/\b(uncomfortable|embarrass|awkward|ashamed)/i, "uncomfortable"],
+  [/\b(hurt|upset|sad\b|lonely)/i, "hurt"],
+];
+export function feelingIn(text) {
+  const t = String(text ?? "");
+  for (const [re, word] of FEELINGS) if (re.test(t)) return word;
+  return null;
+}
+
+// What the button at the bottom of a resident's card offers next, from where the conversation actually is. Concise label, one sentence
+// that goes into the message box for the RA to edit. First rule that applies wins: state rules (the plan, a fresh feeling) come first and
+// may repeat; the open questions go in order and are not offered again once the RA has used them (`used`).
+// turns: the tagger labels of the RA's messages so far. planFit: "fits", "misses" or null. resolution: resolutionState(...).
+export function nextSuggestion({ resident, name, level, turns = [], planFit = null, resolution = null, lastResidentText = "", used = [] }) {
+  const n = name || (resident === "alex" ? "Alex" : "Jordan");
+  const lvl = clamp(Number.isFinite(level) ? level : 0);
+  const tags = turns.filter(Boolean);
+  const to = t => t.addresses === "both" || t.addresses === resident;
+  const addressed = tags.some(to);
+  const reflectedRecently = tags.slice(-2).some(t => to(t) && (t.reflective_listening || t.validates_feeling));
+  const last = tags.length ? tags[tags.length - 1] : null;
+  const planOnTable = !!(last && last.proposal_on_table);
+  const feeling = feelingIn(lastResidentText);
+  const seen = new Set(used);
+  const open = [
+    { id: "give_up", when: lvl >= 3, label: "Ask what they'd give up", text: `${n}, what would you be willing to try or give up?` },
+    { id: "live_with", when: lvl >= 2, label: "Ask what they can live with", text: `${n}, what matters most to you, and what could you live with?` },
+    { id: "trial", when: lvl >= 2 && !planOnTable, label: "Propose a two week trial", text: `${n}, what if we tried an arrangement for two weeks and then checked in?` },
+    { id: "matters_most", when: lvl >= 1, label: "Ask what matters most", text: `${n}, it sounds like this has been hard. What matters most to you here?` },
+    { id: "example", when: true, label: "Ask for an example", text: `${n}, can you give me an example of when this was hardest?` },
+  ];
+  const rules = [
+    { id: "confirm_checkin", when: resolution === "resolved", label: "Confirm the check-in", text: `Let's set a date to check in on how this is working, ${n}.` },
+    { id: "first_ask", when: !addressed, label: "Ask how it's been", text: `${n}, what has this been like for you?` },
+    { id: "plan_misses", when: planFit === "misses", label: "Ask what's missing", text: `${n}, what in this plan doesn't work for you?` },
+    { id: "plan_specifics", when: planOnTable && planFit === "fits" && !last.plan_has_specifics, label: "Pin down who, what, when", text: `${n}, can we settle who does what, and when we check in?` },
+    { id: "plan_confirm", when: planOnTable && planFit === "fits" && !!last.plan_has_specifics, label: "Ask: does it work?", text: `${n}, does this plan work for you?` },
+    { id: "reflect", when: !!feeling && !reflectedRecently, label: `Reflect: ${feeling}`, text: `${n}, it sounds like you feel ${feeling}. Is that right?` },
+  ];
+  const pick = rules.find(r => r.when) || open.find(r => r.when && !seen.has(r.id)) || open.find(r => r.when);
+  return { id: pick.id, label: pick.label, text: pick.text };
+}
+
 // What one resident's card shows, from the trust level and the latest tagger labels. Display only.
 // What they SAY (the stance) is always on the card. What they NEED unlocks at trust 2 and where they could BEND at trust 3,
 // the way a real mediator learns positions first and interests later. profile: { name, mustHaves, flexible }.
-export function residentCardState({ resident, profile, level, previousLevel = null, lastTags = null }) {
+export function residentCardState({ resident, profile, level, previousLevel = null, lastTags = null, turns = [], resolution = null, lastResidentText = "", used = [] }) {
   const lvl = clamp(Number.isFinite(level) ? level : 0);
   const n = profile?.name || (resident === "alex" ? "Alex" : "Jordan");
   const needsUnlocked = lvl >= 2, bendUnlocked = lvl >= 3;
-  const ASK = [
-    { label: `Ask how this has been for ${n}`, text: `${n}, what has this been like for you?` },
-    { label: `Ask what matters most to ${n}`, text: `${n}, it sounds like this has been hard. What matters most to you here?` },
-    { label: `Ask what ${n} could live with`, text: `${n}, what matters most to you, and what could you live with?` },
-    { label: `Ask what ${n} would try or give up`, text: `${n}, what would you be willing to try or give up?` },
-  ];
   const planOnTable = !!(lastTags && lastTags.proposal_on_table);
+  const planFit = planOnTable && needsUnlocked ? (lastTags.meets_needs && lastTags.meets_needs[resident] ? "fits" : "misses") : null;
   return {
     level: lvl,
     needsUnlocked, bendUnlocked,
     needs: needsUnlocked ? (profile?.mustHaves || []).map(shortNeed) : [],
     flexible: bendUnlocked ? (profile?.flexible || []).map(shortNeed) : [],
     // The plan check only appears once the needs are visible, so it never gives them away early.
-    planFit: planOnTable && needsUnlocked ? (lastTags.meets_needs && lastTags.meets_needs[resident] ? "fits" : "misses") : null,
+    planFit,
     trend: previousLevel === null || previousLevel === undefined ? null : lvl > previousLevel ? "warmer" : lvl < previousLevel ? "cooler" : null,
-    ask: ASK[lvl],
+    ask: nextSuggestion({ resident, name: n, level: lvl, turns, planFit, resolution, lastResidentText, used }),
   };
 }
 

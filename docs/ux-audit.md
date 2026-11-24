@@ -93,3 +93,23 @@ The sidebar scrolled on a laptop: long stance text on each card repeated what th
 What changed: no stance or "last said" on the cards (one summary line until your first message, then gone); needs shortened by dropping the "because ..." reason (the chat carries it); "where they could bend" is a floating panel that closes on an outside click or Escape; the suggested question is a small "Ask" button beside the name (its tooltip and accessible name say which question); the checklist is two columns with shorter labels; the "live signals" note moved into the heading; the sidebar is 300 px wide; and an extra tightening rule applies to windows under 680 px high. On phones the two cards now stack in the fold-out instead of sitting in a sideways row that cut the second one off.
 
 Not verified: how much a very long need text (a new topic with longer wording) would add, and whether dropping the reason from each need loses anything for a real user.
+
+## Eighth change: the card button follows the conversation
+
+The "Ask" button asked the same question whatever had just happened (it only changed with trust). It is now at the bottom of each card, with a short label that names the next move, chosen from where the conversation is (checked in Chrome with a scripted conversation):
+
+| Where the conversation is | Button |
+|---|---|
+| Nothing said to this resident yet | Ask how it's been |
+| Alex just said "I'm exhausted" and you have not reflected it | Reflect: worn out |
+| You reflected them, low trust | Ask what matters most |
+| Trust 2 | Ask what they can live with |
+| Trust 3 | Ask what they'd give up |
+| A plan is on the table and misses their needs | Ask what's missing |
+| The plan fits but has no who, what, when | Pin down who, what, when |
+| The plan fits and is specific | Ask: does it work? |
+| Resolved | Confirm the check-in |
+
+Clicking pastes one sentence (for example "Alex, it sounds like you feel worn out. Is that right?") into the message box for you to edit; it never sends. Open questions you have used are not offered again. The feeling for "Reflect" comes from plain keywords in the resident's last message (worn out, blamed, unheard, stressed, angry, frustrated, hurt and a few more), not from a model, so it is a suggestion and can be wrong. The sidebar still fits in the worst case: 646 of 682 px at 1280x720 and 576 of 602 px at 1366x640 (both with the demo banner, which production does not have).
+
+Not verified: how the suggestions feel against live residents' replies (the keyword feelings and the plan states were tested against the mock conversation and unit tests), and whether the open questions should be offered in a different order.

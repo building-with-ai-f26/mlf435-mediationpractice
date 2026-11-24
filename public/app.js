@@ -382,15 +382,17 @@ let live = newLiveLog();
 // the chat intros, so the card only has a one-line summary until your first message. After that it is the live parts (see updateSidebar):
 // mood, what they need (unlocked by trust, where they could bend behind a fold), whether the plan fits, and a suggested question.
 let cardMemory = { alex: null, jordan: null }; // previous trust level and unlock state, to show "warmer" and to flash a new unlock
+let usedAsks = { alex: [], jordan: [] }; // the suggested questions the RA has already used, so the button moves on to a new one
 function renderCards(profiles) {
   cardMemory = { alex: null, jordan: null };
+  usedAsks = { alex: [], jordan: [] };
   DOM.residentCards.innerHTML = ["alex", "jordan"].map(r => `
     <div class="resident-card ${r}" id="card-${r}">
-      <div class="card-header"><span class="card-name">${esc(profiles[r].name)}</span><button type="button" class="ask-chip" id="ask-${r}">Ask</button></div>
-      <div class="card-mood" id="mood-${r}"></div>
+      <div class="card-header"><span class="card-name">${esc(profiles[r].name)}</span><div class="card-mood" id="mood-${r}"></div></div>
       <div class="card-summary" id="summary-${r}">${esc(profiles[r].meta)}. ${esc(profiles[r].trait)}</div>
       <div class="card-needs" id="needs-${r}"></div>
       <div class="card-fit" id="fit-${r}" role="status"></div>
+      <button type="button" class="ask-chip" id="ask-${r}"></button>
     </div>`).join("");
 }
 // The "where they could bend" panel floats over the card below it, so it closes when you click anywhere else (or press Escape).
@@ -400,6 +402,8 @@ document.addEventListener("keydown", ev => { if (ev.key === "Escape") document.q
 DOM.residentCards.addEventListener("click", ev => {
   const chip = ev.target.closest(".ask-chip");
   if (!chip || DOM.raInput.disabled) return;
+  const who = chip.id.replace("ask-", "");
+  if (usedAsks[who] && chip.dataset.id && !usedAsks[who].includes(chip.dataset.id)) usedAsks[who].push(chip.dataset.id);
   DOM.raInput.value = DOM.raInput.value.trim() ? `${DOM.raInput.value.trim()} ${chip.dataset.text}` : chip.dataset.text;
   autoGrow();
   DOM.raInput.focus();
@@ -487,7 +491,12 @@ function updateSidebar() {
   for (const r of ["alex", "jordan"]) {
     const prof = session.profiles?.[r]; if (!prof || !$(`card-${r}`)) continue;
     const name = prof.name, mem = cardMemory[r];
-    const st = residentCardState({ resident: r, profile: prof, level: sig.moods[r].level, previousLevel: mem ? mem.level : null, lastTags });
+    const lastMsg = [...session.turnHistory].reverse().find(h => h.sender === name);
+    const st = residentCardState({
+      resident: r, profile: prof, level: sig.moods[r].level, previousLevel: mem ? mem.level : null, lastTags,
+      turns: live.turns.map(t => t.tags), resolution: live.turns.length ? live.turns[live.turns.length - 1].resolution : null,
+      lastResidentText: lastMsg ? lastMsg.text : "", used: usedAsks[r],
+    });
     const trend = $(`mood-${r}`)?.querySelector(".mood-label");
     if (trend && st.trend) trend.insertAdjacentHTML("afterend", `<span class="mood-trend ${st.trend}">${st.trend}</span>`);
     $(`summary-${r}`).hidden = session.turnCount >= 1; // the chat intros already say it; keep the card short
@@ -505,8 +514,10 @@ function updateSidebar() {
     fit.className = "card-fit" + (st.planFit ? ` ${st.planFit}` : "");
     fit.textContent = st.planFit === "fits" ? `The plan fits ${name}'s needs.` : st.planFit === "misses" ? `The plan misses ${name}'s needs.` : "";
     const ask = $(`ask-${r}`);
-    // A small "Ask" button beside the name. Its tooltip and accessible name say which question it puts in the message box.
-    ask.dataset.text = st.ask.text; ask.title = `${st.ask.label}: puts "${st.ask.text}" in your message box`; ask.setAttribute("aria-label", st.ask.label); ask.disabled = DOM.raInput.disabled;
+    // The button at the bottom of the card names the next move for where the conversation is now (see nextSuggestion in logic.js).
+    // Clicking it puts the sentence in the message box. The tooltip shows the whole sentence.
+    ask.textContent = st.ask.label; ask.dataset.id = st.ask.id; ask.dataset.text = st.ask.text;
+    ask.title = `Puts "${st.ask.text}" in your message box`; ask.disabled = DOM.raInput.disabled;
     cardMemory[r] = { level: st.level, needs: st.needsUnlocked, bend: st.bendUnlocked };
   }
   const moves = $("coach-moves");
