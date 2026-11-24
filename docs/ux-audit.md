@@ -113,3 +113,14 @@ The "Ask" button asked the same question whatever had just happened (it only cha
 Clicking pastes one sentence (for example "Alex, it sounds like you feel worn out. Is that right?") into the message box for you to edit; it never sends. Open questions you have used are not offered again. The feeling for "Reflect" comes from plain keywords in the resident's last message (worn out, blamed, unheard, stressed, angry, frustrated, hurt and a few more), not from a model, so it is a suggestion and can be wrong. The sidebar still fits in the worst case: 646 of 682 px at 1280x720 and 576 of 602 px at 1366x640 (both with the demo banner, which production does not have).
 
 Not verified: how the suggestions feel against live residents' replies (the keyword feelings and the plan states were tested against the mock conversation and unit tests), and whether the open questions should be offered in a different order.
+
+## Ninth change: card suggestions checked against 138 saved live sessions
+
+Every turn of the 138 saved sessions (2,693 resident replies, real tagger labels) was replayed through the card logic. Found and fixed:
+
+- **"Reflect: worn out" was wrong most of the time.** It fired on 16% of replies, 400 of 430 detections as "worn out", because the keyword `sleep` matched any resident mentioning Alex's sleep (including Jordan). Now it needs a first-person feeling phrase and skips sentences about the other resident or starting "I hear". It fires on 2% of replies (63), mostly Alex saying "I'm just really tired" or "it's exhausting".
+- **Solution-pushing RAs got "Ask for an example" 98% of the time.** At low trust with no reflection yet, the button now says "Reflect what you heard".
+
+Confirmed: every one of the 395 resolved turns shows "Confirm the check-in"; the plan states follow the tagger.
+
+Not verified: that a human finds the suggestions helpful, and the 2% detection rate means "Reflect: <feeling>" is rare, so the keyword list is conservative by design.
