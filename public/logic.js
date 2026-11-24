@@ -143,11 +143,21 @@ function enforce2Paragraphs(text) {
   return first + "\n\n" + rest;
 }
 
+// A reply cut off by the token limit ends mid-sentence ("...as the probl"). Drop that unfinished fragment so the chat never shows it.
+// If there is no earlier full sentence worth keeping (under 40 characters), the text is left alone.
+export function trimIncompleteEnd(text) {
+  const t = String(text).trimEnd();
+  if (/[.!?]["'\u201D\u2019)\]]*$/.test(t)) return t;
+  const m = t.match(/^[\s\S]*[.!?]["'\u201D\u2019)\]]*(?=\s)/);
+  return m && m[0].length >= 40 ? m[0].trimEnd() : t;
+}
+
 export function cleanResponse(raw) {
   let t = raw;
   const m = t.match(/^\*\*?\w+\*\*?[\s:]+(.+)$/s);
   if (m) t = m[1];
   t = sanitize(t);
+  t = trimIncompleteEnd(t);
   t = enforce2Paragraphs(t);
   return t;
 }

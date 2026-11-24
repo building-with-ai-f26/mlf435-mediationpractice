@@ -178,6 +178,7 @@ RULES:
 - Paragraph 2: Say how it affects you and ask ${raName === "RA" ? "the RA" : raName} one question.
 - Do NOT use em dashes. Use periods only.
 - Do NOT write more than 4 sentences total.
+- Keep it short: every sentence has at most 18 words, and the whole reply is under 70 words. It must fit in a short chat message and end with a full stop or question mark.
 - Do NOT write one long paragraph.
 - Do NOT mention Jordan.
 - Do NOT prefix with "Alex:".`;
@@ -198,6 +199,7 @@ RULES:
 - Paragraph 2: Push back without hostility. End with how you feel.
 - Do NOT use em dashes. Use periods only.
 - Do NOT write more than 4 sentences total.
+- Keep it short: every sentence has at most 18 words, and the whole reply is under 70 words. It must fit in a short chat message and end with a full stop or question mark.
 - Do NOT write one long paragraph.
 - Do NOT prefix with "Jordan:".`;
 }
