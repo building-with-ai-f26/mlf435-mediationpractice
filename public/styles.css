@@ -846,3 +846,32 @@ body.in-chat .chat-footer { display: flex; }
 .ask-chip:focus-visible { outline: 2px solid var(--navy-muted); outline-offset: 2px; }
 .card-mood { flex-wrap: wrap; row-gap: 2px; }
 .mood-label { white-space: nowrap; }
+
+
+/* Touch screens: bigger targets (about 40 px tall), so Hint, End, the sign out link, the fold-outs and the question chips are easy to hit */
+@media (pointer: coarse) {
+  .btn-small { min-height: 40px; }
+  .ask-chip, .play-btn { min-height: 40px; }
+  .user-bar a, .chat-footer .user-bar a, .app-footer .user-bar a { padding: 8px 8px; }
+  /* Padding, not display: flex, so the summaries keep their disclosure triangle and the wide layout can still hide the Residents one. */
+  .card-side summary, .conversation summary { padding-top: 10px; padding-bottom: 10px; }
+  .residents-summary { padding-top: 12px; padding-bottom: 12px; }
+}
+
+/* Narrow phones: a tighter setup card so more of the form shows, and the dropdown text fits */
+@media (max-width: 480px) {
+  .setup-view { padding: var(--space-sm); }
+  .setup-card { padding: var(--space-md); }
+  .setup-header h1 { font-size: 1.3rem; }
+  select { font-size: 15px; padding-left: 10px; padding-right: 10px; }
+}
+
+/* Short windows (a phone on its side): give the conversation the height. The counter shares a row with the message box, the bars get slimmer. */
+@media (max-height: 520px) {
+  .chat-toolbar { padding-top: 4px; padding-bottom: 4px; }
+  .composer { flex-wrap: nowrap; align-items: center; padding: 6px var(--space-md); }
+  .composer .turn-counter { flex: 0 0 auto; text-align: right; white-space: nowrap; max-width: 12em; overflow: hidden; text-overflow: ellipsis; }
+  .chat-footer { padding-bottom: 2px; }
+  .chat-log { padding-top: var(--space-sm); padding-bottom: var(--space-sm); }
+  .setup-view { align-items: flex-start; }
+}

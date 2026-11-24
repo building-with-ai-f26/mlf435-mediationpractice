@@ -175,3 +175,16 @@ test("the chat is an app-style screen: only the conversation scrolls, the messag
   assert.match(app, /slot\.append\(bar, build\)/); // signed in line and build label into the footer
   assert.match(app, /\$\("app-footer"\)\.append\(bar, build\)/); // and back out to the footer bar
 });
+
+test("final polish: a favicon (no 404), bigger touch targets, short-window and narrow-phone rules, and the wide layout still hides the Residents fold-out header", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /<link rel="icon" href="data:image\/svg\+xml/);
+  const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+  assert.match(css, /@media \(pointer: coarse\)\s*\{[^}]*\.btn-small\s*\{\s*min-height:\s*40px/s);
+  assert.match(css, /@media \(max-height: 520px\)/);
+  assert.match(css, /@media \(max-width: 480px\)/);
+  // The coarse rules must not turn summaries into flex boxes: that removed the disclosure triangle and showed the phone-only header on wide layouts.
+  const coarse = css.slice(css.indexOf("@media (pointer: coarse)"), css.indexOf("/* Narrow phones"));
+  assert.doesNotMatch(coarse, /summary[^}]*display:\s*flex/);
+  assert.match(css, /\.residents-summary\s*\{\s*display:\s*none/);
+});
