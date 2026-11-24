@@ -45,3 +45,37 @@ test("hints follow the state and use no em dashes", () => {
 test("a hostile run (openness stays 0) stays near empty", () => {
   assert.equal(conversationProgress("exploring", o(0, 0), 8).percent, 0);
 });
+
+import { turnLabel, createConfirmGate } from "../public/logic.js";
+import { strengthsSummary, RUBRIC } from "../public/rubric.js";
+
+test("turnLabel counts messages sent and nudges in the last two", () => {
+  assert.equal(turnLabel(0, 15), "0 of 15 messages sent");
+  assert.equal(turnLabel(5, 15), "5 of 15 messages sent");
+  assert.match(turnLabel(13, 15), /^13 of 15 messages sent\. Time to wrap up\.$/);
+  assert.match(turnLabel(14, 15), /wrap up/);
+  assert.match(turnLabel(15, 15), /limit/);
+  assert.match(turnLabel(99, 15), /^15 of 15/); // never above the cap
+});
+
+test("createConfirmGate needs a second press within the time, otherwise it arms again", () => {
+  const g = createConfirmGate(4000);
+  assert.equal(g.press(1000), "armed");
+  assert.equal(g.press(3000), "confirmed");
+  assert.equal(g.press(3500), "armed"); // used up: starts over
+  assert.equal(g.press(9000), "armed"); // too late: armed again, not confirmed
+  assert.equal(g.press(9500), "confirmed");
+  g.press(20000); g.reset();
+  assert.equal(g.press(20001), "armed");
+});
+
+test("strengthsSummary: met items with a quote, most votes first, then rubric order, at most n", () => {
+  const combined = RUBRIC.map(q => ({ id: q.id, met: false, votes: 0, quote: "" }));
+  const set = (id, votes, quote = "q") => { Object.assign(combined[id - 1], { met: true, votes, quote }); };
+  set(5, 2); set(2, 3); set(9, 3); set(7, 3, ""); // 7 has no quote, so it is skipped
+  const s = strengthsSummary(combined, 3);
+  assert.deepEqual(s.map(x => x.id), [2, 9, 5]);
+  assert.equal(s[0].text, RUBRIC[1].text);
+  assert.deepEqual(strengthsSummary(combined.map(c => ({ ...c, met: false })), 3), []);
+  assert.equal(strengthsSummary(combined, 1).length, 1);
+});

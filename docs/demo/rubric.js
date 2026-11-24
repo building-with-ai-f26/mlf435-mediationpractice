@@ -131,6 +131,12 @@ export function scoreFromCombined(combined) {
   return { met, total, score: Math.round(met / total * 100) };
 }
 
+// The items the RA did best, for the top of the feedback: met items with a quote, most graders agreeing first, then in rubric order.
+export function strengthsSummary(combined, n = 3) {
+  return combined.filter(c => c.met && c.quote).sort((a, b) => b.votes - a.votes || a.id - b.id).slice(0, n)
+    .map(c => ({ id: c.id, text: RUBRIC.find(q => q.id === c.id).text, quote: c.quote, votes: c.votes }));
+}
+
 export function coachingSummary(combined) {
   const metIds = new Set(combined.filter(c => c.met).map(c => c.id));
   const missed = RUBRIC.filter(q => !metIds.has(q.id));

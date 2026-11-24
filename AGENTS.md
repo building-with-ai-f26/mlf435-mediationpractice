@@ -165,6 +165,7 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 
 ### Front-end
 - Difficulty is shown as Level 1 (easy), Level 2 (medium) and Level 3 (hard) with a short description (`DIFFICULTY_LEVELS` in `public/config.js`). The stored values stay `easy`, `medium`, `hard`. A test checks the setup drop-down text against the config.
+- Ending a session takes two presses (`createConfirmGate`, 4 seconds). Replies show a typing bubble in the chat. The message box is a growing text area (Enter sends, Shift+Enter adds a line). The resident cards fold up on phones. The debrief leads with "What you did well" (`strengthsSummary`), shows a step list while the graders run, and ends with the conversation and a copy button. The Situation drop-down has one option on purpose (more situations are planned).
 - The chat view scrolls as a page: toolbar sticky at the top, message box sticky at the bottom, at every width. Do not put `overflow` on `.chat-main` or its parents, or sticky stops working. `docs/ux-audit.md` lists what was checked in Chrome and what is recommended next.
 
 ### Rubric versions
