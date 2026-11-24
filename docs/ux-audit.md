@@ -55,3 +55,22 @@ The two resident cards were the last static part of the sidebar (name, handle, a
 - **Suggested question** that changes with trust (how has this been, what matters most, what could you live with, what would you try or give up). Clicking it puts the text in the message box to edit; it never sends.
 
 Not verified: how this feels over a real 15-turn session with live residents, whether unlocking at fixed trust levels matches what live residents actually reveal in the chat (they state needs in their own words and sometimes earlier or later), and screen reader behaviour.
+
+## Final run-through (after all of the above)
+
+Chrome, mock mode, signed-in line injected, the whole flow clicked through (setup, start, three reflective messages, a long multi-line message, End twice, debrief, Start New Session) at six sizes: laptop 1440x900 and 1280x720, tablet 768x1024, phone 390x844, small phone 320x568, phone on its side 844x390. Touch emulation for the tablet and phones.
+
+**Passed everywhere:** no console errors or failed requests (after the favicon fix), no horizontal overflow, the toolbar, message box and footer line never clipped, the page itself never scrolls (checked with real wheel input over the message box, footer line, toolbar, sidebar and conversation, not only with script scrolling), the multi-line box stops growing at five lines with the message box still on screen, restart returns to setup.
+
+**Fixed:**
+- A 404 for `/favicon.ico` on first load: added an inline icon.
+- Touch targets: Hint, End & Debrief, the sign-out link, the fold-outs and the question chips were 23 to 31 px tall; on touch screens they are now about 40 px (laptops are unchanged).
+- Phone on its side: the conversation had about 160 px of height. The message counter now shares a row with the message box, and the bars are slimmer (about 210 px).
+- Narrow phones: tighter setup card and dropdown text so "Level 2: Frustrated, defensive" is not cut off as early.
+
+**Still true, not fixed:**
+- On a 320 px phone or a phone on its side, "Begin Session" is below the fold of the setup screen and needs a swipe inside the form (it works; the form scrolls, the page does not).
+- On a phone on its side the sidebar takes about a third of the width. A "show residents" button instead would give the conversation more room.
+- On a laptop the "How it is going" checklist is below the two resident cards and needs a sidebar scroll.
+- The Hint button now mostly repeats the progress hint.
+- Not testable here: real Google sign-in, live resident replies and voice mode, a screen reader, Safari and Firefox.
