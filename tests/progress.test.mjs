@@ -202,7 +202,7 @@ test("nextSuggestion reflects a fresh feeling, with the feeling in the label, un
 test("nextSuggestion follows the plan: what is missing, who/what/when, does it work, then the check-in", () => {
   const plan = (o = {}) => [RT({ addresses: "both" }), RT({ addresses: "both", proposal_on_table: true, ...o })];
   assert.equal(sg({ turns: plan(), planFit: "misses", level: 2 }).id, "plan_misses");
-  assert.equal(sg({ turns: plan(), planFit: "fits", level: 2 }).label, "Pin down who, what, when");
+  assert.equal(sg({ turns: plan(), planFit: "fits", level: 2 }).label, "Assign who does what, by when");
   assert.equal(sg({ turns: plan({ plan_has_specifics: true }), planFit: "fits", level: 2 }).label, "Ask: does it work?");
   assert.equal(sg({ turns: plan({ plan_has_specifics: true }), planFit: "fits", level: 2, resolution: "resolved" }).id, "confirm_checkin");
   // a plan on the table is not offered a "propose a trial"
