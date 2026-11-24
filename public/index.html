@@ -102,8 +102,15 @@
           </div>
         </div>
         <details id="residents-details" class="residents-details" open>
-          <summary class="residents-summary">Alex and Jordan: read their situations</summary>
+          <summary id="residents-summary" class="residents-summary">Alex and Jordan: read their situations</summary>
           <div id="resident-cards" class="resident-cards"></div>
+          <section class="coach" aria-label="How the conversation is going">
+            <h3>How it is going</h3>
+            <ul id="coach-moves" class="coach-moves"></ul>
+            <p id="coach-balance" class="coach-balance"></p>
+            <p id="coach-warning" class="coach-warning" role="status"></p>
+            <p class="coach-note">Live signals from your messages. Your real feedback comes at the end.</p>
+          </section>
         </details>
       </aside>
 
@@ -141,6 +148,7 @@
           <button id="send-btn" class="btn btn-primary">Send</button>
           <span id="turn-counter" class="turn-counter"></span>
         </div>
+        <div id="chat-footer" class="chat-footer"></div>
       </main>
     </div>
 

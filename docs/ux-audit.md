@@ -34,3 +34,8 @@ Method: read `public/index.html`, `styles.css` and `app.js`, then drove the real
 Also found and fixed while testing: the "Practice mode" setting was visible even with voice off, because its display rule overrode the hidden attribute (introduced with voice replies).
 
 Not verified: the grading step list in a live session (mock grading is instant, so it never shows), the Copy button's clipboard permission in other browsers, screen readers.
+
+## Third change: app-style chat screen and a live sidebar
+
+- **Chat screen.** The chat is now exactly the window high: toolbar fixed at the top, only the conversation scrolls, and the message box is locked to the bottom. The footer line ("Signed in as ...", Sign out, Build ...) sits under the message box. Measured in Chrome at 1280x800 and 390x844: the page height equals the window height, the message box does not move when the conversation scrolls, and the signed-in line returns to the page after the session ends.
+- **Sidebar.** It was a static card pair that nobody needs after the first minute. It now shows each resident's mood (a four-step meter: Guarded, Softening, Open to options, Ready to compromise), a checklist of conversation moves (ground rules, invited and reflected each resident, plan, who/what/when), how many times you spoke to each resident, and a soft warning about your last message (taking a side, lecturing, or a solution before both felt heard). All from labels the app already computes each turn. On phones the folded summary reads "Alex: Softening · Jordan: Guarded".

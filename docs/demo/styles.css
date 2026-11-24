@@ -165,7 +165,7 @@ body {
 
 .chat-view {
   display: flex;
-  min-height: 100vh;
+  min-height: 0;
 }
 
 .sidebar {
@@ -175,12 +175,8 @@ body {
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
-  align-self: flex-start; /* as tall as its content, so the sticky sidebar is not pushed up by the footer below the page */
-  max-height: 100vh;
-  max-height: 100dvh;
-  overflow-y: auto;
+  min-height: 0;
+  overflow-y: auto; /* the sidebar scrolls on its own; it never moves the page */
 }
 
 .sidebar-header {
@@ -288,15 +284,14 @@ body {
   align-items: center;
 }
 
-/* The page scrolls (not an inner box), so the toolbar can stay pinned to the top of the window and the composer to the bottom
-   at any scroll position and any screen width. Neither parent may set overflow, or sticky stops working. */
+/* The chat is a fixed-height screen (see body.in-chat below): toolbar on top, the conversation in the middle is the only thing that
+   scrolls, and the message box with the footer line is locked to the bottom. */
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 0;
 }
 
 .chat-toolbar {
@@ -365,6 +360,7 @@ body {
 
 .chat-log {
   flex: 1;
+  overflow-y: auto;
   padding: var(--space-md) var(--space-lg);
   display: flex;
   flex-direction: column;
@@ -456,9 +452,6 @@ body {
   padding: var(--space-md) var(--space-lg);
   background: var(--paper);
   border-top: 1px solid var(--line);
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
 }
 
 .composer textarea {
@@ -772,3 +765,41 @@ body {
 /* display: flex above would otherwise override the hidden attribute: with voice off there must be no practice mode setting at all */
 .practice-mode[hidden] { display: none; }
 .convo-line { white-space: pre-wrap; }
+
+
+/* Sidebar: live mood and moves */
+.card-mood { display: flex; align-items: center; gap: 8px; margin: 2px 0 var(--space-xs); font-size: 12px; font-weight: 700; color: var(--muted); }
+.mood-meter { display: inline-flex; gap: 3px; }
+.mood-meter i { width: 14px; height: 6px; border-radius: 3px; background: var(--line); }
+.mood-meter i.on { background: var(--navy-muted); }
+.coach { padding: var(--space-md); border-top: 1px solid var(--line); }
+.coach h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 var(--space-sm); }
+.coach-moves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.coach-moves li { display: flex; gap: 8px; align-items: baseline; }
+.coach-moves li.done { color: var(--ink); }
+.coach-moves li.done .move-mark { color: var(--ra); font-weight: 700; }
+.coach-balance { margin: var(--space-sm) 0 0; font-size: 13px; color: var(--muted); }
+.coach-warning { margin: var(--space-sm) 0 0; font-size: 13px; color: var(--alex); font-weight: 600; }
+.coach-warning:empty, .coach-balance:empty { display: none; }
+.coach-note { margin: var(--space-sm) 0 0; font-size: 12px; color: var(--muted); }
+
+
+/* Chat screen: exactly the height of the window. Only the conversation (and the sidebar, on its own) scrolls. */
+body.in-chat { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.in-chat .app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.in-chat .chat-view { flex: 1; min-height: 0; }
+.chat-toolbar { flex: 0 0 auto; }
+
+/* The footer line under the message box: who is signed in, sign out, and the build. The page's own user-bar and build footer move in here. */
+.chat-footer { flex: 0 0 auto; display: none; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 0 var(--space-lg) var(--space-sm); background: var(--paper); font-size: 12px; color: var(--muted); }
+body.in-chat .chat-footer { display: flex; }
+.chat-footer .user-bar, .chat-footer .build-footer { display: flex; gap: 10px; padding: 0; margin: 0; text-align: left; font-size: 12px; }
+.chat-footer .user-bar[hidden], .chat-footer .build-footer[hidden] { display: none; }
+.chat-footer .user-bar a { padding: 2px 4px; }
+@media (max-width: 760px) {
+  body.in-chat .sidebar { flex: 0 0 auto; max-height: 42vh; max-height: 42dvh; }
+  /* Phones: keep the stacked sidebar to two slim rows so the conversation gets the screen. */
+  .sidebar-header { padding: 6px var(--space-md); }
+  .sidebar-header h2 { display: none; }
+  .session-meta { margin-top: 0; }
+}

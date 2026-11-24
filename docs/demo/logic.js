@@ -477,6 +477,34 @@ export function bothAgreed(history) {
 
 // ---- Turn cap and token logging ----
 
+// ---- Sidebar signals ----
+// Pure. What the sidebar shows beside the conversation, from the tagger's labels for each RA message (turns[].tags) and the
+// residents' trust levels. Display only: never used for grading or for what residents say.
+// turns: [{ tags }] (tags is null when the tagger failed). openness: { alex, jordan } 0..3.
+const MOODS = ["Guarded", "Softening", "Open to options", "Ready to compromise"];
+export function sidebarSignals(turns = [], openness = {}) {
+  const tagged = turns.map(t => t && t.tags).filter(Boolean);
+  const to = (t, r) => t.addresses === "both" || t.addresses === r;
+  const any = pred => tagged.some(pred);
+  const mood = r => { const level = clamp(Number.isFinite(openness[r]) ? openness[r] : 0); return { level, label: MOODS[level] }; };
+  const moves = [
+    { id: "ground_rules", label: "Set ground rules", done: any(t => t.ground_rules) },
+    { id: "invite_alex", label: "Invited Alex to share", done: any(t => to(t, "alex") && (t.invites_to_share || t.open_question)) },
+    { id: "invite_jordan", label: "Invited Jordan to share", done: any(t => to(t, "jordan") && (t.invites_to_share || t.open_question)) },
+    { id: "reflect_alex", label: "Reflected Alex's feelings", done: any(t => to(t, "alex") && (t.reflective_listening || t.validates_feeling)) },
+    { id: "reflect_jordan", label: "Reflected Jordan's feelings", done: any(t => to(t, "jordan") && (t.reflective_listening || t.validates_feeling)) },
+    { id: "plan", label: "Put a plan on the table", done: any(t => t.proposal_on_table) },
+    { id: "plan_specifics", label: "Settled who, what and when", done: any(t => t.plan_has_specifics) },
+  ];
+  const balance = { alex: tagged.filter(t => to(t, "alex")).length, jordan: tagged.filter(t => to(t, "jordan")).length };
+  const last = turns.length ? turns[turns.length - 1] && turns[turns.length - 1].tags : null;
+  let warning = null;
+  if (last && last.takes_side) warning = "Your last message may have sounded like taking a side.";
+  else if (last && last.lectures) warning = "Your last message may have sounded like a lecture.";
+  else if (last && last.proposes_solution && Math.min(mood("alex").level, mood("jordan").level) < 1) warning = "A solution came before both residents felt heard.";
+  return { moods: { alex: mood("alex"), jordan: mood("jordan") }, moves, balance, warning, movesDone: moves.filter(m => m.done).length };
+}
+
 // The words next to the message box. n of max messages sent, with a nudge for the last two.
 export function turnLabel(turnCount, max) {
   const n = Math.max(0, Math.min(turnCount, max));

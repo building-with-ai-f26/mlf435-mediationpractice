@@ -79,3 +79,41 @@ test("strengthsSummary: met items with a quote, most votes first, then rubric or
   assert.deepEqual(strengthsSummary(combined.map(c => ({ ...c, met: false })), 3), []);
   assert.equal(strengthsSummary(combined, 1).length, 1);
 });
+
+import { sidebarSignals } from "../public/logic.js";
+const T0 = { addresses: "none", reflective_listening: false, validates_feeling: false, open_question: false, invites_to_share: false, ground_rules: false, proposes_solution: false, takes_side: false, lectures: false, proposal_on_table: false, plan_has_specifics: false };
+const turn = (o = {}) => ({ tags: { ...T0, ...o } });
+
+test("sidebarSignals: moods come from trust levels, and an empty session has no moves done", () => {
+  const s = sidebarSignals([], { alex: 0, jordan: 3 });
+  assert.deepEqual([s.moods.alex.label, s.moods.jordan.label], ["Guarded", "Ready to compromise"]);
+  assert.equal(s.movesDone, 0);
+  assert.equal(s.warning, null);
+  assert.deepEqual(s.balance, { alex: 0, jordan: 0 });
+  assert.equal(sidebarSignals([], { alex: 9, jordan: -2 }).moods.alex.level, 3); // clamped
+  assert.equal(sidebarSignals([], {}).moods.jordan.label, "Guarded");
+});
+
+test("sidebarSignals: each move is credited to the right resident, 'both' counts for both, a failed tagger credits nothing", () => {
+  const s = sidebarSignals([
+    turn({ addresses: "both", ground_rules: true }),
+    turn({ addresses: "alex", open_question: true, invites_to_share: true }),
+    turn({ addresses: "alex", reflective_listening: true }),
+    { tags: null },
+    turn({ addresses: "jordan", validates_feeling: true }),
+  ], { alex: 2, jordan: 1 });
+  const done = Object.fromEntries(s.moves.map(m => [m.id, m.done]));
+  assert.deepEqual(done, { ground_rules: true, invite_alex: true, invite_jordan: false, reflect_alex: true, reflect_jordan: true, plan: false, plan_specifics: false });
+  assert.deepEqual(s.balance, { alex: 3, jordan: 2 }); // both + alex + alex for Alex; both + jordan for Jordan
+  assert.equal(s.movesDone, 4);
+});
+
+test("sidebarSignals: plan moves, and warnings only for the latest message", () => {
+  const plan = sidebarSignals([turn({ addresses: "both", proposal_on_table: true, plan_has_specifics: true })], { alex: 2, jordan: 2 });
+  assert.equal(plan.moves.find(m => m.id === "plan").done && plan.moves.find(m => m.id === "plan_specifics").done, true);
+  assert.match(sidebarSignals([turn({ addresses: "alex", takes_side: true })], { alex: 1, jordan: 0 }).warning, /taking a side/);
+  assert.match(sidebarSignals([turn({ lectures: true })], {}).warning, /lecture/);
+  assert.match(sidebarSignals([turn({ proposes_solution: true })], { alex: 0, jordan: 2 }).warning, /solution came before/);
+  assert.equal(sidebarSignals([turn({ proposes_solution: true })], { alex: 2, jordan: 2 }).warning, null); // fine once both have some trust
+  assert.equal(sidebarSignals([turn({ takes_side: true }), turn({ addresses: "both" })], {}).warning, null); // old slips are not repeated
+});
