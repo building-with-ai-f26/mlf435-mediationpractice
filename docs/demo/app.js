@@ -451,8 +451,9 @@ function hideLoading() {
   const el = document.getElementById("loading-indicator");
   if (el) el.classList.add("hidden");
 }
+// The page scrolls (see .chat-main in styles.css). The toolbar and composer are sticky, so they stay in view.
 function scrollToBottom() {
-  DOM.chatLog.scrollTop = DOM.chatLog.scrollHeight;
+  window.scrollTo({ top: document.documentElement.scrollHeight });
 }
 function updateProgress(state = "exploring") {
   const { percent, hint } = conversationProgress(state, session.openness, session.turnCount);

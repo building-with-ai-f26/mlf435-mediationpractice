@@ -41,3 +41,16 @@ test("cleanResponse strips a bold name prefix, swaps dashes and curly quotes, an
   assert.equal(cleanResponse("one\n\ntwo\n\nthree\n\nfour"), "one\n\ntwo three four");
   assert.equal(cleanResponse("plain text"), "plain text");
 });
+
+import { trimIncompleteEnd } from "../public/logic.js";
+test("trimIncompleteEnd drops a reply's unfinished last sentence and leaves complete replies alone", () => {
+  const cut = "I hear that you are exhausted and I do not want that to keep happening. I'm open to finding a compromise, but I'd like it to account for my classes instead of framing my normal late nights as the probl";
+  assert.equal(trimIncompleteEnd(cut), "I hear that you are exhausted and I do not want that to keep happening.");
+  assert.equal(trimIncompleteEnd("That works for me."), "That works for me.");
+  assert.equal(trimIncompleteEnd('He said "okay."'), 'He said "okay."');
+  assert.equal(trimIncompleteEnd("What do you think?"), "What do you think?");
+  // Nothing worth keeping before the fragment: left as it is, not emptied.
+  assert.equal(trimIncompleteEnd("Okay. I think the plan should be"), "Okay. I think the plan should be");
+  assert.equal(trimIncompleteEnd("sounds good"), "sounds good");
+  assert.equal(cleanResponse(cut).endsWith("happening."), true);
+});
