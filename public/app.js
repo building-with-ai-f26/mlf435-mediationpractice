@@ -473,8 +473,8 @@ function chatScreen(on) {
   const slot = $("chat-footer"), bar = $("user-bar"), build = $("build-footer");
   if (!slot || !bar || !build) return;
   if (on) slot.append(bar, build);
-  else document.body.append(bar, build);
-  if (!on) window.scrollTo(0, 0);
+  else $("app-footer").append(bar, build);
+  if (!on) { window.scrollTo(0, 0); document.querySelector(".app").scrollTop = 0; }
 }
 // The sidebar changes as the conversation does: each resident's mood, the moves made so far, how evenly you spoke to each of them,
 // and a soft warning about the last message. Display only; see sidebarSignals in logic.js.
