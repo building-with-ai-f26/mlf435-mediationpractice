@@ -152,3 +152,10 @@ test("topic labels match the setup dropdown and fall back to the raw value", () 
   assert.equal(topicLabel("noise"), "Noise Complaint");
   assert.equal(topicLabel("something new"), "something new");
 });
+
+test("the hidden practice mode setting stays hidden: its display rule must not override the hidden attribute", () => {
+  const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.practice-mode\[hidden\]\s*\{\s*display:\s*none/);
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /<fieldset id="practice-setting"[^>]*\shidden[\s>]/);
+});

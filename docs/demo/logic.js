@@ -477,6 +477,28 @@ export function bothAgreed(history) {
 
 // ---- Turn cap and token logging ----
 
+// The words next to the message box. n of max messages sent, with a nudge for the last two.
+export function turnLabel(turnCount, max) {
+  const n = Math.max(0, Math.min(turnCount, max));
+  if (n >= max) return `${n} of ${max} messages sent. That is the limit, so end the session to see feedback.`;
+  if (max - n <= 2) return `${n} of ${max} messages sent. Time to wrap up.`;
+  return `${n} of ${max} messages sent`;
+}
+
+// A button that needs two presses close together before it does something that cannot be undone.
+// press(now) returns "armed" the first time and "confirmed" for a second press within `ms`.
+export function createConfirmGate(ms = 4000) {
+  let armedAt = null;
+  return {
+    press(now = Date.now()) {
+      if (armedAt !== null && now - armedAt <= ms) { armedAt = null; return "confirmed"; }
+      armedAt = now;
+      return "armed";
+    },
+    reset() { armedAt = null; },
+  };
+}
+
 export function isTurnCapReached(turnCount, max) {
   return turnCount >= max;
 }

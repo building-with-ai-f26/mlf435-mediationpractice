@@ -17,14 +17,20 @@ Method: read `public/index.html`, `styles.css` and `app.js`, then drove the real
 | Failed grader chip showed technical text | "...(finish_reason: length)" | "could not score this time" (details stay in the console) |
 | Screen readers heard nothing new | Messages, "Residents are thinking" and the hint were silent; the message box had only a placeholder | The conversation is a polite live region, the loading text is a status, the box has a label |
 
-## Recommended next (not done, each needs a decision)
+## Recommendations, all done in the second change
 
-1. **Confirm before "End & Debrief".** One accidental click ends the session, cannot be undone, and sends it to three paid graders. A two-step button ("End and see feedback?" for a few seconds) is enough.
-2. **Typing indicator in the chat.** "Residents are thinking..." appears under the toolbar, far from where the eye is. A typing bubble at the end of the conversation would feel like a live chat.
-3. **Multi-line message box.** It is a single-line input, so long messages scroll sideways and Shift+Enter does nothing. An auto-growing text area (Enter sends, Shift+Enter adds a line) fits mediation messages better.
-4. **Setup screen.** "Situation" is a drop-down with one choice. Add one line on what will happen (about 10 minutes, you mediate, you get a checklist) and show the chosen level's description under the drop-down.
-5. **Residents on phones.** The resident cards (their stance) sit 350 px above the chat and a new session scrolls past them. A collapsed "Residents" strip with each person's one-line stance would keep them in reach.
-6. **Debrief.** Lead with two or three things the RA did well, then the 15-item list; add "see your conversation" and a copy button so the RA can review exact wording. The 10 to 20 second wait only shows one line of text; a step list (graders running) would help.
-7. **Turn counter wording.** "Turn 2 of 15" could read "Your message 2 of 15" and warn near the end.
-8. **Hint button.** It now repeats the progress hint plus an example; consider renaming it "Example question".
-9. **Mock mode shows "RA: RA".** Live mode shows the signed-in first name.
+| Recommendation | What was built |
+|---|---|
+| Confirm before "End & Debrief" | First press turns the button red and says "Press again to end" for 4 seconds; the second press ends. The "plan reached" button still ends at once. |
+| Typing indicator in the chat | Three pulsing dots in the conversation where the reply will appear (still announced as "The residents are typing"). The banner under the toolbar is gone. |
+| Multi-line message box | A box that grows up to about five lines. Enter sends, Shift+Enter adds a line (in the label and tooltip). |
+| Setup screen | The "Situation" drop-down stays as the single option on purpose. Added "Higher levels start more guarded and take longer to trust you." and one paragraph on what happens (10 to 15 minutes, you mediate by typing, 15 item checklist). |
+| Residents on phones | The cards sit in a fold-out ("Alex and Jordan: read their situations"), closed on phones so the conversation is what you see, always open on wide screens. |
+| Debrief | "What you did well" (up to three met items, with your quote) comes first; "See your conversation" with a Copy button comes last; while grading, a list shows each grader reading, finished, or could not score. |
+| Turn counter | "5 of 15 messages sent", "Time to wrap up." for the last two, and a note at the limit. |
+| Mock mode "RA: RA" | Shows "You". |
+| Hint button | Kept as "Hint": it says what the progress bar suggests, then gives an example. |
+
+Also found and fixed while testing: the "Practice mode" setting was visible even with voice off, because its display rule overrode the hidden attribute (introduced with voice replies).
+
+Not verified: the grading step list in a live session (mock grading is instant, so it never shows), the Copy button's clipboard permission in other browsers, screen readers.

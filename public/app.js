@@ -1,9 +1,9 @@
-import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
+import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, turnLabel, createConfirmGate, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
 import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession, difficultyLabel, topicLabel } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
 import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText, createLiveLine } from "./voice.js";
-import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
+import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary, strengthsSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
 // The model ids are set on the server (environment). Ask for them once; the defaults in config.js are used if this fails (demo, mock).
@@ -272,6 +272,7 @@ function addPlayButton(line, resident, text) {
 // Returns the message element. The stored text is always `text`.
 async function showResident(sender, text, resident) {
   if (practice.mode !== "voice") {
+    hideLoading();
     const el = msgEl(sender, text, resident);
     DOM.chatLog.appendChild(el);
     return el;
@@ -304,7 +305,7 @@ const micAvailable = typeof navigator !== "undefined" && !!navigator.mediaDevice
 const mic = { recorder: null, stream: null, chunks: [], startedAt: 0, timer: 0, busy: false };
 
 function setMicStatus(text) { DOM.micStatus.textContent = text; }
-function setDraft(text) { DOM.raInput.value = text; DOM.raInput.focus(); }
+function setDraft(text) { DOM.raInput.value = text; autoGrow(); DOM.raInput.focus(); }
 
 function releaseMic() {
   clearTimeout(mic.timer);
@@ -444,13 +445,21 @@ function planNoticeEl() {
   return div;
 }
 
+// A typing bubble at the end of the conversation (where the reply will appear), not a banner away from it.
 function showLoading() {
-  const el = document.getElementById("loading-indicator");
-  if (el) el.classList.remove("hidden");
+  let el = document.getElementById("typing-bubble");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "typing-bubble";
+    el.className = "message typing";
+    el.setAttribute("role", "status");
+    el.innerHTML = '<div class="msg-body"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only">The residents are typing</span></div>';
+  }
+  DOM.chatLog.appendChild(el); // appending an element that is already there moves it to the end
+  scrollToBottom();
 }
 function hideLoading() {
-  const el = document.getElementById("loading-indicator");
-  if (el) el.classList.add("hidden");
+  document.getElementById("typing-bubble")?.remove();
 }
 // The page scrolls (see .chat-main in styles.css). The toolbar and composer are sticky, so they stay in view.
 function scrollToBottom() {
@@ -464,7 +473,12 @@ function updateProgress(state = "exploring") {
   if (hintEl) hintEl.textContent = hint;
 }
 function updateTurnCounter() {
-  if (DOM.turnCounter) DOM.turnCounter.textContent = `Turn ${Math.min(session.turnCount, MAX_TURNS)} of ${MAX_TURNS}`;
+  if (DOM.turnCounter) DOM.turnCounter.textContent = turnLabel(session.turnCount, MAX_TURNS);
+}
+// The message box grows with what is typed, up to about five lines.
+function autoGrow() {
+  DOM.raInput.style.height = "auto";
+  DOM.raInput.style.height = Math.min(DOM.raInput.scrollHeight, 140) + "px";
 }
 function setInput(enabled) {
   DOM.raInput.disabled = !enabled;
@@ -555,7 +569,7 @@ async function startSession() {
   updateTurnCounter();
   updateProgress();
 
-  DOM.raNameDisplay.textContent = session.raName;
+  DOM.raNameDisplay.textContent = session.raName === "RA" ? "You" : session.raName;
   DOM.topicBadge.textContent = topicLabel(session.topic);
   DOM.difficultyBadge.textContent = difficultyLabel(session.difficulty);
 
@@ -570,6 +584,8 @@ async function startSession() {
   const profiles = getProfiles(session.topic, session.difficulty);
   session.profiles = profiles;
   renderCards(profiles);
+  // On a phone the cards start folded so the conversation is what you see; on a wide screen they stay open beside it.
+  $("residents-details").open = !window.matchMedia("(max-width: 760px)").matches;
 
   DOM.chatLog.appendChild(sysEl(MOCK ? "Session started. MOCK MODE: canned replies, no API calls." : "Session started."));
   setInput(false);
@@ -652,6 +668,7 @@ async function send() {
   const raEl = msgEl(session.raName, text, "ra");
   DOM.chatLog.appendChild(raEl);
   DOM.raInput.value = "";
+  autoGrow();
   setInput(false);
   showLoading();
   scrollToBottom();
@@ -723,6 +740,7 @@ async function send() {
     raEl.remove();
     shownEls.forEach(el => el.remove());
     DOM.raInput.value = text;
+    autoGrow();
     DOM.chatLog.appendChild(sysEl(`Error: ${err.message}. Try again.`));
     track("error_shown", { where: "mediation_turn" });
     setInput(true);
@@ -771,6 +789,7 @@ window.addEventListener("pagehide", saveLiveOnLeave);
 
 async function end() {
   if (!session.active) return;
+  disarmEnd();
   session.active = false;
   setInput(false);
   saveLog();
@@ -782,12 +801,13 @@ async function end() {
   DOM.debriefTopic.textContent = topicLabel(session.topic);
   DOM.debriefDifficulty.textContent = difficultyLabel(session.difficulty);
   window.scrollTo(0, 0); // the page scrolls now, so start the feedback at the top
-  DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
+  DOM.consolidated.innerHTML = `<div class="grading-steps" role="status"><p>Three AI graders are reading your conversation. This takes 10 to 20 seconds.</p><ul>${GRADER_MODELS.map((g, i) => `<li id="grading-step-${i}" class="waiting"><span class="step-dot" aria-hidden="true"></span><span class="step-text">${esc(g.name)} is reading</span></li>`).join("")}</ul></div>`;
 
   try {
     const prompt = buildRubricPrompt(session.topic, session.difficulty, session.turnHistory, session.raName);
     const results = await Promise.all(
-      GRADER_MODELS.map(async g => {
+      GRADER_MODELS.map(async (g, i) => {
+        const markStep = (cls, text) => { const li = document.getElementById(`grading-step-${i}`); if (li) { li.className = cls; li.querySelector(".step-text").textContent = text; } };
         try {
           const raw = await call(g.id, [{ role: "system", content: prompt }], graderOpts(g), "graders");
           console.log(`[Grader ${g.name} FULL RAW]:`, raw);
@@ -795,10 +815,12 @@ async function end() {
           if (!parsed.ok) throw new Error("the reply could not be read as 15 yes/no lines");
           const verified = verifyEvidence(parsed.answers, session.turnHistory);
           if (verified.changed.length) console.warn(`[Grader ${g.name}] YES changed to NO: ${verified.changed.map(id => `Q${id} (${verified.reasons[id]})`).join(", ")}`);
+          markStep("done", `${g.name} finished`);
           return { name: g.name, model: g.id, ok: true, answers: verified.answers, changed: verified.changed };
         } catch (e) {
           const finish = e.finishReason ?? "none (no reply received)";
           console.error(`[Grader ${g.name} FAILED]: ${e.message} (finish_reason: ${finish})`);
+          markStep("failed", `${g.name} could not score this time`);
           return { name: g.name, model: g.id, ok: false, answers: {}, error: `${e.message} (finish_reason: ${finish})` };
         }
       })
@@ -841,6 +863,11 @@ function renderDebrief(results) {
     if (valid.length < 2) html += `<div class="grader-note">Score based on ${valid.length} grader${valid.length === 1 ? "" : "s"}</div>`;
     html += "</div>";
 
+    const strengths = strengthsSummary(combined, 3);
+    if (strengths.length) {
+      html += `<div class="section-block strengths"><h3>What you did well</h3><ul class="strength-list">${strengths.map(x => `<li><span class="strength-q">${esc(x.text)}</span><span class="strength-quote">You said: "${esc(x.quote)}"</span></li>`).join("")}</ul></div>`;
+    }
+
     const groups = [...new Set(RUBRIC.map(q => q.group))];
     for (const group of groups) {
       html += `<div class="section-block"><h3>${esc(group)}</h3><ul class="rubric-list">`;
@@ -865,9 +892,31 @@ function renderDebrief(results) {
   }
 
   html += `<div class="section-block"><h3>Reflection (not scored)</h3><ul>${REFLECTION_QUESTIONS.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>`;
+  html += conversationBlock();
   DOM.consolidated.innerHTML = html;
+  wireCopyButton();
   track("debrief_viewed", { met: metCount, graders_ok: valid.length });
   if (valid.length < results.length) track("error_shown", { where: "grader" });
+}
+
+// The whole conversation, so the RA can reread their exact words, with a button to copy it.
+function conversationLines() {
+  return session.turnHistory.map(h => `${h.sender === session.raName && session.raName === "RA" ? "You" : h.sender}: ${h.text}`);
+}
+function conversationBlock() {
+  const lines = session.turnHistory.map(h => {
+    const who = h.sender === "Alex" || h.sender === "Jordan" ? h.sender : (session.raName === "RA" ? "You" : session.raName);
+    return `<li class="convo-line ${h.sender === "Alex" ? "alex" : h.sender === "Jordan" ? "jordan" : "ra"}"><span class="convo-who">${esc(who)}</span> ${esc(h.text)}</li>`;
+  }).join("");
+  return `<details class="section-block conversation"><summary>See your conversation</summary><ul class="convo-list">${lines}</ul><button id="copy-convo" class="btn btn-small" type="button">Copy conversation</button><span id="copy-status" class="copy-status" role="status"></span></details>`;
+}
+function wireCopyButton() {
+  const btn = document.getElementById("copy-convo"), status = document.getElementById("copy-status");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(conversationLines().join("\n\n")); status.textContent = "Copied."; }
+    catch (e) { status.textContent = "Could not copy. Select the text and copy it instead."; }
+  });
 }
 
 function esc(text) {
@@ -882,7 +931,24 @@ function esc(text) {
 
 DOM.startBtn.addEventListener("click", startSession);
 DOM.sendBtn.addEventListener("click", send);
-DOM.endBtn.addEventListener("click", end);
+// Ending cannot be undone and sends the session to three paid graders, so the first press only asks.
+const endGate = createConfirmGate(4000);
+const endLabel = DOM.endBtn.textContent;
+let endTimer = 0;
+function disarmEnd() {
+  clearTimeout(endTimer); endGate.reset();
+  DOM.endBtn.textContent = endLabel; DOM.endBtn.classList.remove("armed");
+}
+DOM.endBtn.addEventListener("click", () => {
+  if (endGate.press() === "armed") {
+    DOM.endBtn.textContent = "Press again to end";
+    DOM.endBtn.classList.add("armed");
+    endTimer = setTimeout(disarmEnd, 4000);
+    return;
+  }
+  disarmEnd();
+  end();
+});
 
 const hintBtn = document.getElementById("hint-btn");
 if (hintBtn) {
@@ -902,8 +968,10 @@ DOM.restartBtn.addEventListener("click", () => {
   DOM.chatLog.innerHTML = "";
   DOM.residentCards.innerHTML = "";
   DOM.raInput.value = "";
+  autoGrow();
   window.scrollTo(0, 0);
 });
+DOM.raInput.addEventListener("input", autoGrow);
 
 DOM.raInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) {
