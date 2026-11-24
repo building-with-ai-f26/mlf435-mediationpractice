@@ -1,6 +1,6 @@
 import { isMockMode, routeMessage, bothOrder, buildRouterPrompt, parseRouterReply, commitReplies, mediationPrompt, buildRequestBody, extractContent, cleanResponse, buildTaggerPrompt, parseTags, updateOpenness, startingOpenness, bothAgreed, proposalStanding, resolutionState, conversationProgress, isTurnCapReached, formatUsage, getAppMode, formatBuildLabel, decodeIdToken, isTokenValid, getEnvName, facilitatorName, cleanFacilitatorName } from "./logic.js";
 import { mockResponse, mockRoute } from "./mock.js";
-import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession } from "./config.js";
+import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession, difficultyLabel, topicLabel } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
 import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText, createLiveLine } from "./voice.js";
 import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary } from "./rubric.js";
@@ -128,15 +128,16 @@ fetch("/healthz").then(r => r.ok ? r.json() : null).then(h => {
   if (label && el) { el.textContent = label; el.hidden = false; }
 }).catch(() => {});
 
+// Topic-neutral examples. (The old list was about quiet hours and late classes, which made no sense in the other five topics.)
 const HINTS = [
-  "Try asking: 'Alex, what would help you feel comfortable in your room past 10pm?'",
-  "Try asking: 'Jordan, what time do you usually get back from evening classes?'",
+  "Try asking: 'What would help you feel comfortable with this?'",
+  "Try asking: 'Can you tell me more about what a normal day looks like for you?'",
   "Try asking: 'What is one small change each of you could try this week?'",
   "Try asking: 'Can you both describe what a good compromise would look like?'",
   "Try saying: 'I hear both of you. Let me make sure I understand...' then restate both sides.",
-  "Try asking: 'Alex, what is the latest you could tolerate some noise?'",
-  "Try asking: 'Jordan, what is the earliest you could start keeping things quieter?'",
-  "Try proposing: 'What if we try a 2-week experiment with specific quiet hours and check in after?'",
+  "Try asking: 'Alex, what did you hear Jordan say?' and then the same for Jordan.",
+  "Try asking: 'What would each of you be willing to try or give up?'",
+  "Try proposing: 'What if we try this for two weeks and check in after?' once both of you have been heard.",
 ];
 
 const $ = id => document.getElementById(id);
@@ -555,8 +556,8 @@ async function startSession() {
   updateProgress();
 
   DOM.raNameDisplay.textContent = session.raName;
-  DOM.topicBadge.textContent = session.topic;
-  DOM.difficultyBadge.textContent = session.difficulty;
+  DOM.topicBadge.textContent = topicLabel(session.topic);
+  DOM.difficultyBadge.textContent = difficultyLabel(session.difficulty);
 
   DOM.setup.classList.add("hidden");
   DOM.chatView.classList.remove("hidden");
@@ -778,8 +779,9 @@ async function end() {
   DOM.chatView.classList.add("hidden");
   DOM.debriefView.classList.remove("hidden");
   DOM.debriefRaName.textContent = session.raName;
-  DOM.debriefTopic.textContent = toTitleCase(session.topic);
-  DOM.debriefDifficulty.textContent = toTitleCase(session.difficulty);
+  DOM.debriefTopic.textContent = topicLabel(session.topic);
+  DOM.debriefDifficulty.textContent = difficultyLabel(session.difficulty);
+  window.scrollTo(0, 0); // the page scrolls now, so start the feedback at the top
   DOM.consolidated.innerHTML = '<div class="message system"><div class="msg-body">Sending to 3 AI graders. This takes 10-20 seconds.</div></div>';
 
   try {
@@ -825,7 +827,7 @@ function renderDebrief(results) {
   DOM.graderCards.innerHTML = results.map(r => `
     <div class="grader-chip${r.ok ? "" : " failed"}">
       <span class="grader-name">${esc(r.name)}</span>
-      <span class="grader-detail">${r.ok ? `${Object.values(r.answers).filter(a => a.yes).length} of ${RUBRIC.length} met` : esc(r.error)}</span>
+      <span class="grader-detail">${r.ok ? `${Object.values(r.answers).filter(a => a.yes).length} of ${RUBRIC.length} met` : "could not score this time"}</span>
     </div>`).join("");
 
   let html = "";
@@ -874,10 +876,6 @@ function esc(text) {
   return d.innerHTML;
 }
 
-function toTitleCase(str) {
-  return str.replace(/\w\S*/g, txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
-}
-
 /* ============================================================
    EVENTS
    ============================================================ */
@@ -890,8 +888,9 @@ const hintBtn = document.getElementById("hint-btn");
 if (hintBtn) {
   hintBtn.addEventListener("click", () => {
     track("hint_clicked");
-    const hint = HINTS[Math.floor(Math.random() * HINTS.length)];
-    DOM.chatLog.appendChild(sysEl("Hint: " + hint));
+    const next = ($("progress-hint")?.textContent || "").trim();
+    const example = HINTS[Math.floor(Math.random() * HINTS.length)];
+    DOM.chatLog.appendChild(sysEl(`Hint: ${next ? next + " " : ""}${example}`));
     scrollToBottom();
   });
 }
@@ -903,6 +902,7 @@ DOM.restartBtn.addEventListener("click", () => {
   DOM.chatLog.innerHTML = "";
   DOM.residentCards.innerHTML = "";
   DOM.raInput.value = "";
+  window.scrollTo(0, 0);
 });
 
 DOM.raInput.addEventListener("keydown", e => {

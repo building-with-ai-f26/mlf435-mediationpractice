@@ -64,6 +64,21 @@ export const TOKENS_ROUTER = 30;
 export const ROUTER_OPTS = { maxTokens: TOKENS_ROUTER, temperature: 0, reasoning: REASONING };
 export const MAX_TURNS = 15;
 
+// What the user sees for each difficulty. The values (easy, medium, hard) stay as they are in code and saved sessions.
+// The description says how the residents start out; it must match the profiles in getProfiles() and the trust rules in logic.js.
+export const DIFFICULTY_LEVELS = {
+  easy:   { level: 1, label: "Level 1", description: "Open to talking" },
+  medium: { level: 2, label: "Level 2", description: "Frustrated, defensive" },
+  hard:   { level: 3, label: "Level 3", description: "Angry, slow to trust" },
+};
+export const difficultyLabel = d => (DIFFICULTY_LEVELS[d] || DIFFICULTY_LEVELS.medium).label;
+export const difficultyOptionText = d => `${DIFFICULTY_LEVELS[d].label}: ${DIFFICULTY_LEVELS[d].description}`;
+export const TOPIC_LABELS = {
+  noise: "Noise Complaint", cleaning: "Cleaning Dispute", "guest policy": "Guest Policy Violation",
+  hygiene: "Hygiene Concern", "shared items": "Shared Items Conflict", "religious practice": "Religious Practice",
+};
+export const topicLabel = t => TOPIC_LABELS[t] || t;
+
 // Practice mode: "text" is the default and behaves as before. "voice" reads resident replies aloud.
 // The mode never changes what is stored, graded or sent to the models.
 export const PRACTICE_MODES = ["text", "voice"];
