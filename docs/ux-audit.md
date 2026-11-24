@@ -106,7 +106,7 @@ The "Ask" button asked the same question whatever had just happened (it only cha
 | Trust 2 | Ask what they can live with |
 | Trust 3 | Ask what they'd give up |
 | A plan is on the table and misses their needs | Ask what's missing |
-| The plan fits but has no who, what, when | Pin down who, what, when |
+| The plan fits but has no who, what, when | Assign who does what, by when |
 | The plan fits and is specific | Ask: does it work? |
 | Resolved | Confirm the check-in |
 
@@ -131,3 +131,10 @@ Not verified: that a human finds the suggestions helpful, and the 2% detection r
 - The checklist uses short labels ("Explained why you met and that both would speak") instead of the full grader question. The graders still get the full question text (a test checks it).
 - Sidebar checklist: "Ground rules" is now "Establish ground rules" and "Who, what, when" is "Pin down who, what, when" (matches the card button).
 - Checked in Chrome in mock mode. Not verified: the wording of the 15 short labels and bullets with real users.
+
+## Eleventh change: one-row checklist, clearer plan labels, RA favicon
+
+- The "How it is going" checklist is one row per item (it was two columns). Labels: "Propose a plan" (was "Plan on the table") and "Assign who does what, by when" (was "Who, what, when"). The matching card button now says "Assign who does what, by when".
+- The follow-up check-in is not its own checklist row because the tagger does not label it; the plan row is judged on the tagger's `plan_has_specifics`. The check-in is still graded in the debrief (Q15).
+- Favicon is the navy "RA" badge again.
+- Fit at worst case (both unlocked, plan check, two line warning, demo banner on): 673 of 682 px at 1280x720 (9 px spare), 589 of 602 px at 1366x640 (13 px spare). Tight: any new sidebar line needs re-measuring.

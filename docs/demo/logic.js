@@ -493,8 +493,8 @@ export function sidebarSignals(turns = [], openness = {}) {
     { id: "invite_jordan", label: "Invited Jordan", done: any(t => to(t, "jordan") && (t.invites_to_share || t.open_question)) },
     { id: "reflect_alex", label: "Reflected Alex", done: any(t => to(t, "alex") && (t.reflective_listening || t.validates_feeling)) },
     { id: "reflect_jordan", label: "Reflected Jordan", done: any(t => to(t, "jordan") && (t.reflective_listening || t.validates_feeling)) },
-    { id: "plan", label: "Plan on the table", done: any(t => t.proposal_on_table) },
-    { id: "plan_specifics", label: "Pin down who, what, when", done: any(t => t.plan_has_specifics) },
+    { id: "plan", label: "Propose a plan", done: any(t => t.proposal_on_table) },
+    { id: "plan_specifics", label: "Assign who does what, by when", done: any(t => t.plan_has_specifics) },
   ];
   const balance = { alex: tagged.filter(t => to(t, "alex")).length, jordan: tagged.filter(t => to(t, "jordan")).length };
   const last = turns.length ? turns[turns.length - 1] && turns[turns.length - 1].tags : null;
@@ -560,7 +560,7 @@ export function nextSuggestion({ resident, name, level, turns = [], planFit = nu
     { id: "confirm_checkin", when: resolution === "resolved", label: "Confirm the check-in", text: `Let's set a date to check in on how this is working, ${n}.` },
     { id: "first_ask", when: !addressed, label: "Ask how it's been", text: `${n}, what has this been like for you?` },
     { id: "plan_misses", when: planFit === "misses", label: "Ask what's missing", text: `${n}, what in this plan doesn't work for you?` },
-    { id: "plan_specifics", when: planOnTable && planFit === "fits" && !last.plan_has_specifics, label: "Pin down who, what, when", text: `${n}, can we settle who does what, and when we check in?` },
+    { id: "plan_specifics", when: planOnTable && planFit === "fits" && !last.plan_has_specifics, label: "Assign who does what, by when", text: `${n}, can we settle who does what, and when we check in?` },
     { id: "plan_confirm", when: planOnTable && planFit === "fits" && !!last.plan_has_specifics, label: "Ask: does it work?", text: `${n}, does this plan work for you?` },
     { id: "reflect", when: !!feeling && !reflectedRecently, label: `Reflect: ${feeling}`, text: `${n}, it sounds like you feel ${feeling}. Is that right?` },
   ];
