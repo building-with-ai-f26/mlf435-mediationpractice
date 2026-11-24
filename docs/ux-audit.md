@@ -29,7 +29,7 @@ Method: read `public/index.html`, `styles.css` and `app.js`, then drove the real
 | Debrief | "What you did well" (up to three met items, with your quote) comes first; "See your conversation" with a Copy button comes last; while grading, a list shows each grader reading, finished, or could not score. |
 | Turn counter | "5 of 15 messages sent", "Time to wrap up." for the last two, and a note at the limit. |
 | Mock mode "RA: RA" | Shows "You". |
-| Hint button | Kept as "Hint": it says what the progress bar suggests, then gives an example. |
+| Hint button | Kept as "Hint" at first; removed in the sixth change below, because it only repeated the progress hint. |
 
 Also found and fixed while testing: the "Practice mode" setting was visible even with voice off, because its display rule overrode the hidden attribute (introduced with voice replies).
 
@@ -72,5 +72,10 @@ Chrome, mock mode, signed-in line injected, the whole flow clicked through (setu
 - On a 320 px phone or a phone on its side, "Begin Session" is below the fold of the setup screen and needs a swipe inside the form (it works; the form scrolls, the page does not).
 - On a phone on its side the sidebar takes about a third of the width. A "show residents" button instead would give the conversation more room.
 - On a laptop the "How it is going" checklist is below the two resident cards and needs a sidebar scroll.
-- The Hint button now mostly repeats the progress hint.
+- (The Hint button was removed afterwards, see below.)
 - Not testable here: real Google sign-in, live resident replies and voice mode, a screen reader, Safari and Firefox.
+
+## Sixth change: no Hint button, new tab icon
+
+- **Hint button removed.** After the audit it only repeated the progress hint that is always visible in the toolbar ("Both are listening. Ask what each would be willing to try or give up."), plus a random example. The button, its example list and its `hint_clicked` analytics event are gone; the toolbar has the progress bar with its hint, and End & Debrief. The suggested-question buttons on the resident cards cover the "what could I say" need.
+- **Tab icon** is the speaking head emoji (U+1F5E3), as an inline image. It is drawn from the system's emoji font, so it looks different on each platform; very old systems without that emoji show a blank square.

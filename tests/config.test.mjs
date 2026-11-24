@@ -188,3 +188,12 @@ test("final polish: a favicon (no 404), bigger touch targets, short-window and n
   assert.doesNotMatch(coarse, /summary[^}]*display:\s*flex/);
   assert.match(css, /\.residents-summary\s*\{\s*display:\s*none/);
 });
+
+test("the tab icon is the speaking head emoji, and the Hint button is gone (the progress hint in the toolbar says the same thing)", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /<link rel="icon" href="data:image\/svg\+xml[^"]*%F0%9F%97%A3%EF%B8%8F/); // U+1F5E3 U+FE0F
+  assert.doesNotMatch(html, /hint-btn/);
+  assert.match(html, /id="progress-hint"/); // the always-visible suggestion stays
+  const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /hint-btn|HINTS|hint_clicked/);
+});
