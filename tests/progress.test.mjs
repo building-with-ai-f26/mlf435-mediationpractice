@@ -140,14 +140,11 @@ test("residentCardState: the plan check shows only when a plan is on the table a
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 3, lastTags: null }).planFit, null);
 });
 
-test("residentCardState: trend and a different suggested question at each trust level", () => {
+test("residentCardState: trend is warmer or cooler only when trust changed", () => {
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 1 }).trend, "warmer");
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 0, previousLevel: 1 }).trend, "cooler");
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2, previousLevel: 2 }).trend, null);
   assert.equal(residentCardState({ resident: "alex", profile: PROFILE, level: 2 }).trend, null);
-  const asks = [0, 1, 2, 3].map(l => residentCardState({ resident: "alex", profile: PROFILE, level: l }).ask);
-  assert.equal(new Set(asks.map(a => a.text)).size, 4);
-  assert.ok(asks.every(a => a.text.startsWith("Alex,") && a.label.includes("Alex")));
 });
 
 import { shortNeed } from "../public/logic.js";
@@ -159,4 +156,59 @@ test("shortNeed drops only the reason after 'because' and the full stop", () => 
   assert.equal(shortNeed("The study group keeps meeting until 11:30pm on Tuesdays and Thursdays."), "The study group keeps meeting until 11:30pm on Tuesdays and Thursdays");
   assert.equal(shortNeed(null), "");
   assert.deepEqual(residentCardState({ resident: "alex", profile: { name: "Alex", mustHaves: ["Quiet by 10, because of a lab."], flexible: ["Weekends."] }, level: 3 }).needs, ["Quiet by 10"]);
+});
+
+import { nextSuggestion, feelingIn } from "../public/logic.js";
+const RT = (o = {}) => ({ addresses: "none", reflective_listening: false, validates_feeling: false, open_question: false, invites_to_share: false, ground_rules: false, proposes_solution: false, takes_side: false, lectures: false, proposal_on_table: false, plan_has_specifics: false, ...o });
+const sg = (o = {}) => nextSuggestion({ resident: "alex", name: "Alex", level: 0, ...o });
+
+test("feelingIn finds a feeling to reflect, in a mediator's words, or null", () => {
+  assert.equal(feelingIn("I'm exhausted and running on empty."), "worn out");
+  assert.equal(feelingIn("I feel attacked right now."), "blamed");
+  assert.equal(feelingIn("Nobody is listening to me."), "unheard");
+  assert.equal(feelingIn("I'm tired of asking over and over."), "worn out"); // tired wins over 'tired of': first match in the list
+  assert.equal(feelingIn("Fine. The room is at the end of the hall."), null);
+  assert.equal(feelingIn(null), null);
+});
+
+test("nextSuggestion follows the conversation: first question, then reflect a feeling, then questions by trust, never the same one twice", () => {
+  assert.equal(sg().id, "first_ask");
+  const talked = [RT({ addresses: "alex", open_question: true })];
+  assert.equal(sg({ turns: talked }).id, "example"); // trust 0, nothing to reflect
+  assert.equal(sg({ turns: talked, level: 1 }).id, "matters_most");
+  assert.equal(sg({ turns: talked, level: 2 }).id, "live_with");
+  assert.equal(sg({ turns: talked, level: 3 }).id, "give_up");
+  // used ones are skipped, in order, and it never runs dry
+  assert.equal(sg({ turns: talked, level: 3, used: ["give_up"] }).id, "live_with");
+  assert.equal(sg({ turns: talked, level: 3, used: ["give_up", "live_with"] }).id, "trial");
+  assert.ok(sg({ turns: talked, level: 3, used: ["give_up", "live_with", "trial", "matters_most", "example"] }).id);
+  // another resident's first question does not count for Alex
+  assert.equal(sg({ turns: [RT({ addresses: "jordan" })] }).id, "first_ask");
+  assert.equal(sg({ turns: [RT({ addresses: "both" })], level: 1 }).id, "matters_most"); // both counts
+});
+
+test("nextSuggestion reflects a fresh feeling, with the feeling in the label, until the RA has reflected", () => {
+  const talked = [RT({ addresses: "alex", open_question: true })];
+  const s = sg({ turns: talked, lastResidentText: "I'm exhausted. My lab is at 7am." });
+  assert.equal(s.id, "reflect");
+  assert.equal(s.label, "Reflect: worn out");
+  assert.equal(s.text, "Alex, it sounds like you feel worn out. Is that right?");
+  const done = [...talked, RT({ addresses: "alex", reflective_listening: true })];
+  assert.notEqual(sg({ turns: done, lastResidentText: "I'm exhausted." }).id, "reflect"); // just reflected
+});
+
+test("nextSuggestion follows the plan: what is missing, who/what/when, does it work, then the check-in", () => {
+  const plan = (o = {}) => [RT({ addresses: "both" }), RT({ addresses: "both", proposal_on_table: true, ...o })];
+  assert.equal(sg({ turns: plan(), planFit: "misses", level: 2 }).id, "plan_misses");
+  assert.equal(sg({ turns: plan(), planFit: "fits", level: 2 }).label, "Pin down who, what, when");
+  assert.equal(sg({ turns: plan({ plan_has_specifics: true }), planFit: "fits", level: 2 }).label, "Ask: does it work?");
+  assert.equal(sg({ turns: plan({ plan_has_specifics: true }), planFit: "fits", level: 2, resolution: "resolved" }).id, "confirm_checkin");
+  // a plan on the table is not offered a "propose a trial"
+  assert.notEqual(sg({ turns: plan(), planFit: null, level: 2, used: ["live_with"] }).id, "trial");
+});
+
+test("nextSuggestion labels are short and the text is a sentence that names the resident", () => {
+  const cases = [sg(), sg({ turns: [RT({ addresses: "alex" })], level: 3 }), sg({ turns: [RT({ addresses: "alex", proposal_on_table: true })], planFit: "misses" }), sg({ turns: [RT({ addresses: "alex" })], lastResidentText: "I feel unheard" }), sg({ resolution: "resolved", turns: [RT({ addresses: "both" })] })];
+  for (const c of cases) { assert.ok(c.label.length <= 30, c.label); assert.match(c.text, /Alex/); assert.ok(c.text.length > 12); }
+  assert.match(nextSuggestion({ resident: "jordan", name: "Jordan", level: 0 }).text, /^Jordan,/);
 });

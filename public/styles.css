@@ -927,3 +927,17 @@ body.in-chat .chat-footer { display: flex; }
   .coach-moves { gap: 2px 8px; }
   .coach-balance, .coach-warning { margin-top: 4px; }
 }
+
+/* The suggestion button sits at the bottom of the card, full width, and says what the next move is. Mood shares the name row. */
+.resident-card .card-header { justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.card-header .card-mood { margin: 0; justify-content: flex-end; }
+.ask-chip { width: 100%; margin: 6px 0 0; padding: 5px 10px; border-radius: var(--radius-sm); text-align: left; }
+.ask-chip::before { content: "\2192"; margin-right: 6px; color: var(--navy-muted); }
+.ask-chip { padding-top: 3px; padding-bottom: 3px; margin-top: 4px; }
+.card-fit { margin-top: 1px; line-height: 1.25; }
+@media (max-height: 680px) and (min-width: 761px) {
+  .resident-card { padding: 5px 8px 6px; }
+  .card-needs ul { margin-bottom: 2px; }
+  .coach h3 { margin-bottom: 2px; }
+  .ask-chip { margin-top: 3px; }
+}
