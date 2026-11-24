@@ -163,6 +163,10 @@ The debrief scores the RA with a 15-question yes/no rubric in `public/rubric.js`
 4. Each question is met by vote. With 3 usable graders, 2 YES votes are needed. With 2, both must say YES. With 1, that grader decides. With none, nothing is met.
 5. Score = questions met out of 15, as a percentage, computed in code. The debrief shows "X of 15", the grader agreement for each question, and one tip for the first missed question. The two reflection questions are shown but not scored.
 
+### Front-end
+- Difficulty is shown as Level 1 (easy), Level 2 (medium) and Level 3 (hard) with a short description (`DIFFICULTY_LEVELS` in `public/config.js`). The stored values stay `easy`, `medium`, `hard`. A test checks the setup drop-down text against the config.
+- The chat view scrolls as a page: toolbar sticky at the top, message box sticky at the bottom, at every width. Do not put `overflow` on `.chat-main` or its parents, or sticky stops working. `docs/ux-audit.md` lists what was checked in Chrome and what is recommended next.
+
 ### Rubric versions
 - Version 1: first rubric.
 - Version 2: the grader prompt requires a quote for the "avoid" questions (Q8, Q9, Q11).

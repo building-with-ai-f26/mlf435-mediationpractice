@@ -177,8 +177,9 @@ body {
   flex-direction: column;
   position: sticky;
   top: 0;
-  height: 100vh;
-  height: 100dvh;
+  align-self: flex-start; /* as tall as its content, so the sticky sidebar is not pushed up by the footer below the page */
+  max-height: 100vh;
+  max-height: 100dvh;
   overflow-y: auto;
 }
 
@@ -341,7 +342,6 @@ body {
 .progress-hint {
   font-size: 13px;
   color: var(--muted);
-  opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -349,6 +349,15 @@ body {
 @media (max-width: 800px) {
   .toolbar-progress { flex-wrap: wrap; }
   .progress-hint { white-space: normal; }
+}
+/* Phones: the toolbar is pinned, so keep it short. Name and buttons on one row, the progress bar under them, the hint on one line. */
+@media (max-width: 560px) {
+  .chat-toolbar { flex-wrap: wrap; row-gap: var(--space-xs); padding: var(--space-sm) var(--space-md); }
+  .toolbar-progress { order: 3; flex: 1 0 100%; margin: 0; flex-wrap: nowrap; }
+  .progress-track { flex: 0 0 64px; }
+  .progress-hint { white-space: nowrap; font-size: 12px; }
+  .composer { flex-wrap: wrap; padding: var(--space-sm) var(--space-md); }
+  .composer .turn-counter { flex: 1 0 100%; text-align: center; }
 }
 
 .ra-label { color: var(--muted); }

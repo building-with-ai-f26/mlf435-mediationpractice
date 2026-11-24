@@ -130,3 +130,25 @@ test("one reasoning setting: residents, router, tagger and graders all use it; o
   assert.deepEqual(body.reasoning, { enabled: false });
   assert.deepEqual(body.provider, { zdr: true, data_collection: "deny" });
 });
+
+import { DIFFICULTY_LEVELS, difficultyLabel, difficultyOptionText, TOPIC_LABELS, topicLabel } from "../public/config.js";
+
+test("difficulty levels: Level 1 to 3 keep the old values, labels are short, and the setup dropdown says the same thing", () => {
+  assert.deepEqual(Object.keys(DIFFICULTY_LEVELS), ["easy", "medium", "hard"]);
+  assert.deepEqual(["easy", "medium", "hard"].map(difficultyLabel), ["Level 1", "Level 2", "Level 3"]);
+  assert.equal(difficultyLabel("nonsense"), "Level 2"); // unknown falls back to the default level
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  for (const d of ["easy", "medium", "hard"]) {
+    assert.ok(html.includes(`<option value="${d}"`), d);
+    assert.ok(html.includes(`>${difficultyOptionText(d)}</option>`), `index.html option text for ${d} must be "${difficultyOptionText(d)}"`);
+    assert.ok(difficultyOptionText(d).length <= 32, "the label stays short");
+  }
+});
+
+test("topic labels match the setup dropdown and fall back to the raw value", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  for (const [value, text] of Object.entries(TOPIC_LABELS)) assert.ok(html.includes(`<option value="${value}">${text}</option>`), value);
+  assert.equal(Object.keys(TOPIC_LABELS).length, 6);
+  assert.equal(topicLabel("noise"), "Noise Complaint");
+  assert.equal(topicLabel("something new"), "something new");
+});
