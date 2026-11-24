@@ -197,3 +197,17 @@ test("the tab icon is the speaking head emoji, and the Hint button is gone (the 
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(app, /hint-btn|HINTS|hint_clicked/);
 });
+
+test("compact sidebar: no long stance on the cards, the Ask button sits on the name row, the bend list floats instead of growing the card, and there is a short-window rule", () => {
+  const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /card-stance|card-said|card-side|foldTheirSide/);
+  assert.match(app, /class="card-header"><span class="card-name">[^]*?<button type="button" class="ask-chip"/);
+  assert.match(app, /document\.addEventListener\("click", ev => \{ if \(!ev\.target\.closest\("\.bend"\)\)/); // closes when you click elsewhere
+  const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.bend ul\s*\{[^}]*position:\s*absolute/);
+  assert.match(css, /@media \(max-height: 680px\) and \(min-width: 761px\)/);
+  assert.match(css, /\.sidebar\s*\{\s*width:\s*300px/);
+  assert.match(css, /\.coach-moves\s*\{[^}]*grid-template-columns:\s*1fr 1fr/);
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /coach-note/);
+});
