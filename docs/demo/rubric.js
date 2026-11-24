@@ -7,21 +7,21 @@
 export const RUBRIC_VERSION = 4;
 
 export const RUBRIC = [
-  { id: 1, group: "Setting the stage", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
-  { id: 2, group: "Setting the stage", text: "Did the RA set, or ask for, ground rules, such as one person speaking at a time or being respectful?", tip: "Ask the roommates to agree to a few ground rules before the conversation starts." },
-  { id: 3, group: "Hearing both sides", text: "Did the RA invite Alex and Jordan, each in turn, to describe their own experience before offering any ideas?", tip: "Give each roommate a turn to describe the situation before you suggest anything." },
-  { id: 4, group: "Hearing both sides", text: "Did the RA use reflective listening with Alex, restating what Alex said in different words?", tip: "Restate what you heard in your own words. For example: \"It sounds like you are exhausted and feel ignored.\"" },
-  { id: 5, group: "Hearing both sides", text: "Did the RA use reflective listening with Jordan, restating what Jordan said in different words?", tip: "Do the same for the second roommate, so both feel heard." },
-  { id: 6, group: "Hearing both sides", text: "Did the RA name or acknowledge a feeling (such as frustration, worry or hesitation) that a roommate expressed?", tip: "Name the feeling you hear. It shows you understood and lowers defensiveness." },
-  { id: 7, group: "Hearing both sides", text: "Did the RA help the roommates understand each other's perspective, for example by asking one to say what they heard from the other?", tip: "Ask each roommate what they heard the other say. Understanding comes before compromise." },
-  { id: 8, group: "Staying neutral", text: "Did the RA avoid saying or implying that one roommate was right, wrong or at fault?", tip: "Stay neutral. Describe the problem as shared, not as one person's fault." },
-  { id: 9, group: "Staying neutral", text: "Did the RA avoid lecturing or telling either roommate what they should do?", tip: "Ask instead of telling. Lecturing makes people defensive." },
-  { id: 10, group: "Facilitating", text: "Did the RA ask at least two open-ended questions (such as what, how, or tell me more)?", tip: "Open questions like \"What would help?\" draw out more than yes or no answers." },
-  { id: 11, group: "Facilitating", text: "Did the RA wait to discuss solutions until both roommates had spoken and been heard?", tip: "Hold solutions until both people feel heard." },
-  { id: 12, group: "Facilitating", text: "Did the RA ask the roommates to come up with options themselves, instead of giving them the solution?", tip: "Your job is to facilitate. Ask \"What could each of you try?\" before offering ideas." },
-  { id: 13, group: "Compromise", text: "Did the RA ask each roommate what they would be willing to try or give up?", tip: "Compromise means each person gives something. Ask both what they could do." },
-  { id: 14, group: "Closing", text: "Did the RA help the roommates state a specific agreement, including who will do what and when?", tip: "Turn the agreement into something concrete: who, what and when." },
-  { id: 15, group: "Closing", text: "Did the RA set up a follow-up, such as a check-in date, revisiting the Roommate Living Agreement, or offering further support?", tip: "Close by scheduling a check-in and pointing to the Roommate Living Agreement and your RHD." },
+  { id: 1, group: "Setting the stage", short: "Explained why you met and that both would speak", good: "Explained why you were meeting and that both would get a turn.", fix: "Open by saying why you are meeting and that both will get a turn.", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
+  { id: 2, group: "Setting the stage", short: "Set ground rules", good: "Set ground rules.", fix: "Ask both roommates to agree to a few ground rules.", text: "Did the RA set, or ask for, ground rules, such as one person speaking at a time or being respectful?", tip: "Ask the roommates to agree to a few ground rules before the conversation starts." },
+  { id: 3, group: "Hearing both sides", short: "Invited each roommate to share first", good: "Invited each roommate to describe their experience before offering ideas.", fix: "Invite each roommate, in turn, to share their experience before offering ideas.", text: "Did the RA invite Alex and Jordan, each in turn, to describe their own experience before offering any ideas?", tip: "Give each roommate a turn to describe the situation before you suggest anything." },
+  { id: 4, group: "Hearing both sides", short: "Reflected Alex's words", good: "Reflected Alex's words back.", fix: "Reflect Alex's words back in your own words.", text: "Did the RA use reflective listening with Alex, restating what Alex said in different words?", tip: "Restate what you heard in your own words. For example: \"It sounds like you are exhausted and feel ignored.\"" },
+  { id: 5, group: "Hearing both sides", short: "Reflected Jordan's words", good: "Reflected Jordan's words back.", fix: "Reflect Jordan's words back in your own words.", text: "Did the RA use reflective listening with Jordan, restating what Jordan said in different words?", tip: "Do the same for the second roommate, so both feel heard." },
+  { id: 6, group: "Hearing both sides", short: "Named a feeling", good: "Named a feeling a roommate expressed.", fix: "Name the feeling you hear, such as frustration or worry.", text: "Did the RA name or acknowledge a feeling (such as frustration, worry or hesitation) that a roommate expressed?", tip: "Name the feeling you hear. It shows you understood and lowers defensiveness." },
+  { id: 7, group: "Hearing both sides", short: "Helped them understand each other", good: "Helped the roommates understand each other's view.", fix: "Ask each roommate what they heard the other say.", text: "Did the RA help the roommates understand each other's perspective, for example by asking one to say what they heard from the other?", tip: "Ask each roommate what they heard the other say. Understanding comes before compromise." },
+  { id: 8, group: "Staying neutral", short: "Stayed neutral on fault", good: "Stayed neutral about who was right or at fault.", fix: "Stay neutral: describe the problem as shared, not one person's fault.", text: "Did the RA avoid saying or implying that one roommate was right, wrong or at fault?", tip: "Stay neutral. Describe the problem as shared, not as one person's fault." },
+  { id: 9, group: "Staying neutral", short: "Avoided lecturing", good: "Avoided lecturing or telling them what to do.", fix: "Ask instead of telling; lecturing makes people defensive.", text: "Did the RA avoid lecturing or telling either roommate what they should do?", tip: "Ask instead of telling. Lecturing makes people defensive." },
+  { id: 10, group: "Facilitating", short: "Asked open questions", good: "Asked open-ended questions.", fix: "Ask more open questions, such as \"What would help?\"", text: "Did the RA ask at least two open-ended questions (such as what, how, or tell me more)?", tip: "Open questions like \"What would help?\" draw out more than yes or no answers." },
+  { id: 11, group: "Facilitating", short: "Held solutions until both were heard", good: "Waited on solutions until both were heard.", fix: "Hold solutions until both roommates feel heard.", text: "Did the RA wait to discuss solutions until both roommates had spoken and been heard?", tip: "Hold solutions until both people feel heard." },
+  { id: 12, group: "Facilitating", short: "Asked them for options", good: "Asked the roommates to come up with options.", fix: "Ask the roommates for their own options before offering any.", text: "Did the RA ask the roommates to come up with options themselves, instead of giving them the solution?", tip: "Your job is to facilitate. Ask \"What could each of you try?\" before offering ideas." },
+  { id: 13, group: "Compromise", short: "Asked what each would try or give up", good: "Asked what each would try or give up.", fix: "Ask each roommate what they would try or give up.", text: "Did the RA ask each roommate what they would be willing to try or give up?", tip: "Compromise means each person gives something. Ask both what they could do." },
+  { id: 14, group: "Closing", short: "Pinned down who, what, when", good: "Helped them agree on who does what, and when.", fix: "Turn the agreement into who does what, and when.", text: "Did the RA help the roommates state a specific agreement, including who will do what and when?", tip: "Turn the agreement into something concrete: who, what and when." },
+  { id: 15, group: "Closing", short: "Set a follow-up check-in", good: "Set up a follow-up check-in.", fix: "Close by setting a check-in date.", text: "Did the RA set up a follow-up, such as a check-in date, revisiting the Roommate Living Agreement, or offering further support?", tip: "Close by scheduling a check-in and pointing to the Roommate Living Agreement and your RHD." },
 ];
 
 const RESIDENTS = ["Alex", "Jordan"];
@@ -141,4 +141,13 @@ export function coachingSummary(combined) {
   const metIds = new Set(combined.filter(c => c.met).map(c => c.id));
   const missed = RUBRIC.filter(q => !metIds.has(q.id));
   return { missed, nextTip: missed.length ? missed[0].tip : null };
+}
+
+// Two short bullet lists for the top of the feedback: what the RA did (all met items, up to n) and what to work on (missed items with the tip, up to n).
+export function overallSummary(combined, n = 5) {
+  const met = new Set(combined.filter(c => c.met).map(c => c.id));
+  return {
+    did: RUBRIC.filter(q => met.has(q.id)).slice(0, n).map(q => q.good),
+    improve: RUBRIC.filter(q => !met.has(q.id)).slice(0, n).map(q => q.fix),
+  };
 }

@@ -218,3 +218,27 @@ test("parseRubricReply drops a leading RA: label from a quote, and verifyEvidenc
   assert.deepEqual([1, 2, 3, 4].map(q => v.answers[q].yes), [true, true, false, true]);
   assert.deepEqual(v.changed, [3]); // an invented quote is still rejected
 });
+
+import { overallSummary } from "../public/rubric.js";
+test("every rubric item has a concise label and a one line strength; the prompt still uses the full question", () => {
+  for (const q of RUBRIC) {
+    assert.ok(q.short && q.short.length <= 50, `Q${q.id} short: ${q.short}`);
+    assert.ok(q.good && q.good.length <= 80, `Q${q.id} good`);
+    assert.ok(q.fix && q.fix.length <= 80 && !/^(Do the same|Your job)/.test(q.fix), `Q${q.id} fix`);
+    assert.doesNotMatch(q.short, /^Did the RA|\?$/);
+  }
+  assert.equal(RUBRIC[0].short, "Explained why you met and that both would speak");
+  assert.match(buildRubricPrompt("noise", "easy", [], "Sam"), /Q1\. Did the RA explain why they were meeting/);
+});
+
+test("overallSummary: bullets for what was done and what to improve, from met and missed items", () => {
+  const all = combineGraders([grader(RUBRIC.map(q => q.id))]);
+  const none = combineGraders([grader([])]);
+  assert.equal(overallSummary(all).improve.length, 0);
+  assert.equal(overallSummary(all).did.length, 5);
+  assert.equal(overallSummary(none).did.length, 0);
+  const some = overallSummary(combineGraders([grader([1, 4])]));
+  assert.deepEqual(some.did, [RUBRIC[0].good, RUBRIC[3].good]);
+  assert.equal(some.improve[0], RUBRIC[1].fix); // first missed item is Q2
+  assert.equal(some.improve.length, 5);
+});

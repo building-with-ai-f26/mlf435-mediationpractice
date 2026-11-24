@@ -124,3 +124,10 @@ Every turn of the 138 saved sessions (2,693 resident replies, real tagger labels
 Confirmed: every one of the 395 resolved turns shows "Confirm the check-in"; the plan states follow the tagger.
 
 Not verified: that a human finds the suggestions helpful, and the 2% detection rate means "Reflect: <feeling>" is rare, so the keyword list is conservative by design.
+
+## Tenth change: concise debrief
+
+- The top of the feedback is two bullet lists: **What you did well** (up to five met items, one line each) and **What to improve** (up to five missed items, one standalone instruction each). The old "One thing to try next time" block is gone, since the list covers it.
+- The checklist uses short labels ("Explained why you met and that both would speak") instead of the full grader question. The graders still get the full question text (a test checks it).
+- Sidebar checklist: "Ground rules" is now "Establish ground rules" and "Who, what, when" is "Pin down who, what, when" (matches the card button).
+- Checked in Chrome in mock mode. Not verified: the wording of the 15 short labels and bullets with real users.

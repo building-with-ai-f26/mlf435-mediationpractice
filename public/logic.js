@@ -488,13 +488,13 @@ export function sidebarSignals(turns = [], openness = {}) {
   const any = pred => tagged.some(pred);
   const mood = r => { const level = clamp(Number.isFinite(openness[r]) ? openness[r] : 0); return { level, label: MOODS[level] }; };
   const moves = [
-    { id: "ground_rules", label: "Ground rules", done: any(t => t.ground_rules) },
+    { id: "ground_rules", label: "Establish ground rules", done: any(t => t.ground_rules) },
     { id: "invite_alex", label: "Invited Alex", done: any(t => to(t, "alex") && (t.invites_to_share || t.open_question)) },
     { id: "invite_jordan", label: "Invited Jordan", done: any(t => to(t, "jordan") && (t.invites_to_share || t.open_question)) },
     { id: "reflect_alex", label: "Reflected Alex", done: any(t => to(t, "alex") && (t.reflective_listening || t.validates_feeling)) },
     { id: "reflect_jordan", label: "Reflected Jordan", done: any(t => to(t, "jordan") && (t.reflective_listening || t.validates_feeling)) },
     { id: "plan", label: "Plan on the table", done: any(t => t.proposal_on_table) },
-    { id: "plan_specifics", label: "Who, what, when", done: any(t => t.plan_has_specifics) },
+    { id: "plan_specifics", label: "Pin down who, what, when", done: any(t => t.plan_has_specifics) },
   ];
   const balance = { alex: tagged.filter(t => to(t, "alex")).length, jordan: tagged.filter(t => to(t, "jordan")).length };
   const last = turns.length ? turns[turns.length - 1] && turns[turns.length - 1].tags : null;
