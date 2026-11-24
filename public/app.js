@@ -3,7 +3,7 @@ import { mockResponse, mockRoute } from "./mock.js";
 import { MAX_STT_SECONDS, MAX_STT_BYTES, RESIDENT_MODEL, applyServerModels, GRADER_MODELS, RESIDENT_OPTS, graderOpts, TAGGER_MODEL, TAGGER_OPTS, ROUTER_MODEL, ROUTER_OPTS, MAX_TURNS, getProfiles, alexPrompt, jordanPrompt, createSession, difficultyLabel, topicLabel } from "./config.js";
 import { newLiveLog, addUsage, buildLiveRecord } from "./liveRecord.js";
 import { normalizeMode, readStoredMode, writeStoredMode, readStoredMuted, writeStoredMuted, ttsText, estimateDurationMs, revealFraction, revealText, createLiveLine } from "./voice.js";
-import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary, strengthsSummary } from "./rubric.js";
+import { RUBRIC, RUBRIC_VERSION, buildRubricPrompt, parseRubricReply, verifyEvidence, combineGraders, scoreFromCombined, coachingSummary, strengthsSummary, overallSummary } from "./rubric.js";
 
 const API_URL = "/api/chat";
 // The model ids are set on the server (environment). Ask for them once; the defaults in config.js are used if this fails (demo, mock).
@@ -932,10 +932,9 @@ function renderDebrief(results) {
     if (valid.length < 2) html += `<div class="grader-note">Score based on ${valid.length} grader${valid.length === 1 ? "" : "s"}</div>`;
     html += "</div>";
 
-    const strengths = strengthsSummary(combined, 3);
-    if (strengths.length) {
-      html += `<div class="section-block strengths"><h3>What you did well</h3><ul class="strength-list">${strengths.map(x => `<li><span class="strength-q">${esc(x.text)}</span><span class="strength-quote">You said: "${esc(x.quote)}"</span></li>`).join("")}</ul></div>`;
-    }
+    const sum = overallSummary(combined);
+    html += `<div class="section-block strengths"><h3>What you did well</h3>${sum.did.length ? `<ul class="strength-list">${sum.did.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "<p>Nothing on the checklist yet. The tips below show where to start.</p>"}</div>`;
+    html += `<div class="section-block improve"><h3>What to improve</h3>${sum.improve.length ? `<ul class="strength-list">${sum.improve.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "<p>You met every item on the checklist. Keep doing what you did.</p>"}</div>`;
 
     const groups = [...new Set(RUBRIC.map(q => q.group))];
     for (const group of groups) {
@@ -946,18 +945,16 @@ function renderDebrief(results) {
         html += `<li class="rubric-item ${c.met ? "met" : "missed"}">
           <span class="rubric-mark" aria-label="${c.met ? "Met" : "Missed"}">${c.met ? "\u2713" : "\u2717"}</span>
           <div class="rubric-body">
-            <div class="rubric-q">${esc(q.text)}</div>
+            <div class="rubric-q">${esc(q.short)}</div>
             ${c.met
               ? `<div class="rubric-evidence">You said: "${esc(c.quote)}"</div>`
               : `<div class="rubric-tip">Tip: ${esc(q.tip)}</div>`}
-            <div class="rubric-agree">${agree} of ${valid.length} grader${valid.length === 1 ? "" : "s"} said ${c.met ? "yes" : "no"}</div>
+            <div class="rubric-agree">${agree} of ${valid.length} graders agree</div>
           </div></li>`;
       }
       html += "</ul></div>";
     }
 
-    const { nextTip } = coachingSummary(combined);
-    html += `<div class="section-block"><h3>One thing to try next time</h3><p>${nextTip ? esc(nextTip) : "You met every item on the checklist. Keep doing what you did."}</p></div>`;
   }
 
   html += `<div class="section-block"><h3>Reflection (not scored)</h3><ul>${REFLECTION_QUESTIONS.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>`;

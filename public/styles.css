@@ -941,3 +941,8 @@ body.in-chat .chat-footer { display: flex; }
   .coach h3 { margin-bottom: 2px; }
   .ask-chip { margin-top: 3px; }
 }
+
+/* The two summary lists read as bullets */
+.strengths .strength-list, .improve .strength-list { list-style: disc; padding-left: 22px; margin: 6px 0 0; }
+.strengths .strength-list li, .improve .strength-list li { display: list-item; padding: 2px 0; }
+.improve { margin-top: 14px; }
