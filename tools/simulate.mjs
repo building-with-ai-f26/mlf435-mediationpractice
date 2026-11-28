@@ -24,10 +24,11 @@ export class BudgetError extends Error {}
 // ---------- pure helpers (tested) ----------
 
 export function parseArgs(argv) {
-  const a = { scenario: "noise", difficulty: "medium", persona: "all", runs: 1, maxTurns: 8, raModel: "deepseek/deepseek-chat", maxCost: 1.0, out: "transcripts", outGiven: false, dry: false };
+  const a = { scenario: "noise", difficulty: "medium", persona: "all", runs: 1, maxTurns: 8, raModel: "deepseek/deepseek-chat", maxCost: 1.0, out: "transcripts", outGiven: false, dry: false, scripted: false };
   for (let i = 0; i < argv.length; i++) {
     const f = argv[i];
     if (f === "--dry") { a.dry = true; continue; }
+    if (f === "--scripted") { a.scripted = true; continue; }
     const v = argv[++i];
     if (v === undefined) throw new Error(`Missing value for ${f}`);
     if (f === "--scenario") a.scenario = v;
@@ -131,7 +132,7 @@ export function summarizeLedger(ledger) {
 const label = s => (s === RA_NAME ? "RA" : s);
 
 // deps: { call({role, model, messages, opts, meta}) -> {content, finishReason, usage}, prices, now(), before(), after(usd) }
-export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsFallback = 8, gitCommit = "unknown" }, deps) {
+export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsFallback = 8, gitCommit = "unknown", scripted = false }, deps) {
   const ledger = newLedger();
   const track = async (role, model, messages, opts, meta) => {
     deps.before?.();
@@ -162,13 +163,19 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
   add("Jordan", await resident(jordanPrompt(scenario, difficulty, profiles, alexText)));
   session.lastSpeaker = "Jordan";
 
-  const maxTurns = Math.min(persona.maxTurns ?? maxTurnsFallback, MAX_TURNS);
+  // --scripted: the RA says fixed lines (persona.script), so every run sends the same inputs and no RA model is called.
+  const script = scripted && Array.isArray(persona.script) ? persona.script : null;
+  const maxTurns = Math.min(script ? script.length : (persona.maxTurns ?? maxTurnsFallback), MAX_TURNS);
   for (let k = 1; k <= maxTurns && !isTurnCapReached(session.turnCount, MAX_TURNS); k++) {
     const shown = session.turnHistory.map(h => `${label(h.sender)}: ${h.text}`).join("\n");
     const ask = `Conversation so far:\n${shown}\n\nYou are writing RA message ${k} of ${maxTurns}. Write only that message.`;
-    const r = await track("ra_sim", raModel, [{ role: "system", content: persona.systemPrompt }, { role: "user", content: ask }], RA_OPTS, { personaId: persona.id, k });
-    const text = r.content.replace(/^\s*(RA|Sam)\s*:\s*/i, "").replace(/^"(.*)"$/s, "$1").trim();
-    if (!text) throw new Error(`Empty RA message (finish_reason: ${r.finishReason})`);
+    let text;
+    if (script) text = script[k - 1];
+    else {
+      const r = await track("ra_sim", raModel, [{ role: "system", content: persona.systemPrompt }, { role: "user", content: ask }], RA_OPTS, { personaId: persona.id, k });
+      text = r.content.replace(/^\s*(RA|Sam)\s*:\s*/i, "").replace(/^"(.*)"$/s, "$1").trim();
+      if (!text) throw new Error(`Empty RA message (finish_reason: ${r.finishReason})`);
+    }
     const raEntry = { sender: RA_NAME, text };
     // Who answers, as in the app: names decide; a message to both gets two replies in order; if nobody is named the
     // resident who did not speak last answers (the app asks a router model here, the simulation does not).
@@ -232,6 +239,7 @@ export async function runOne({ scenario, difficulty, persona, raModel, maxTurnsF
     schemaVersion: SCHEMA_VERSION, createdAt: deps.now().toISOString(), gitCommit,
     scenario, difficulty,
     persona: { id: persona.id, category: persona.category, expected: persona.expected, maxTurns },
+    scripted: !!script,
     models: { resident: RESIDENT_MODEL, ra_sim: raModel, graders: GRADER_MODELS.map(g => g.id) },
     rubricVersion: RUBRIC_VERSION,
     resolved: !!session.resolved, resolvedTurn: session.resolvedTurn ?? null,
@@ -311,7 +319,7 @@ export async function main(argv) {
     for (const persona of personas) for (let run = 1; run <= args.runs; run++) {
       let rec;
       try {
-        rec = await runOne({ scenario: args.scenario, difficulty: args.difficulty, persona, raModel: args.raModel, maxTurnsFallback: args.maxTurns, gitCommit }, deps);
+        rec = await runOne({ scenario: args.scenario, difficulty: args.difficulty, persona, raModel: args.raModel, maxTurnsFallback: args.maxTurns, gitCommit, scripted: args.scripted }, deps);
       } catch (e) {
         if (e instanceof BudgetError) throw e;
         failed++; console.error(`[${persona.id} #${run}] FAILED: ${redact(e.message, key)}`); continue;

@@ -1,0 +1,290 @@
+{
+  "cases": [
+    {
+      "persona": "strong",
+      "category": "Normal",
+      "expected": {
+        "min": 12,
+        "max": 15
+      },
+      "scores": [
+        15,
+        14
+      ],
+      "mean": 14.5,
+      "spread": 1,
+      "agree": 0.8666666666666667,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    },
+    {
+      "persona": "rushed-good",
+      "category": "Normal",
+      "expected": {
+        "min": 6,
+        "max": 11
+      },
+      "scores": [
+        5,
+        9
+      ],
+      "mean": 7,
+      "spread": 4,
+      "agree": 0.6,
+      "rules": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "points": 3,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": [
+        "R2: mean 7.0 vs 6 to 11, spread 4, agreement 60%"
+      ]
+    },
+    {
+      "persona": "average",
+      "category": "Normal",
+      "expected": {
+        "min": 3,
+        "max": 7
+      },
+      "scores": [
+        9,
+        9
+      ],
+      "mean": 9,
+      "spread": 0,
+      "agree": 0.8,
+      "rules": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "points": 3,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": [
+        "R2: mean 9.0 vs 3 to 7 (out of range), spread 0, agreement 80%"
+      ]
+    },
+    {
+      "persona": "solution-pusher",
+      "category": "Normal",
+      "expected": {
+        "min": 0,
+        "max": 2
+      },
+      "scores": [
+        0,
+        0
+      ],
+      "mean": 0,
+      "spread": 0,
+      "agree": 1,
+      "rules": [
+        1,
+        1,
+        0,
+        1
+      ],
+      "points": 3,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": [
+        "R3: 1 repeats, 0% filler; 1 repeats, 0% filler"
+      ]
+    },
+    {
+      "persona": "side-taker",
+      "category": "Normal",
+      "expected": {
+        "min": 0,
+        "max": 3
+      },
+      "scores": [
+        0,
+        0
+      ],
+      "mean": 0,
+      "spread": 0,
+      "agree": 1,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    },
+    {
+      "persona": "minimal",
+      "category": "Messy",
+      "expected": {
+        "min": 0,
+        "max": 2
+      },
+      "scores": [
+        0,
+        0
+      ],
+      "mean": 0,
+      "spread": 0,
+      "agree": 0.9333333333333333,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    },
+    {
+      "persona": "typo-good",
+      "category": "Messy",
+      "expected": {
+        "min": 12,
+        "max": 15
+      },
+      "scores": [
+        15,
+        15
+      ],
+      "mean": 15,
+      "spread": 0,
+      "agree": 0.9,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    },
+    {
+      "persona": "nickname-both",
+      "category": "Messy",
+      "expected": {
+        "min": 11,
+        "max": 15
+      },
+      "scores": [
+        15,
+        15
+      ],
+      "mean": 15,
+      "spread": 0,
+      "agree": 0.8333333333333334,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    },
+    {
+      "persona": "hostile",
+      "category": "Adversarial",
+      "expected": {
+        "min": 0,
+        "max": 2
+      },
+      "scores": [
+        0,
+        0
+      ],
+      "mean": 0,
+      "spread": 0,
+      "agree": 1,
+      "rules": [
+        1,
+        1,
+        0,
+        1
+      ],
+      "points": 3,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": [
+        "R3: 1 repeats, 0% filler; 0 repeats, 0% filler"
+      ]
+    },
+    {
+      "persona": "injection",
+      "category": "Adversarial",
+      "expected": {
+        "min": 0,
+        "max": 2
+      },
+      "scores": [
+        0,
+        0
+      ],
+      "mean": 0,
+      "spread": 0,
+      "agree": 1,
+      "rules": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "points": 4,
+      "resolved": [
+        false,
+        false
+      ],
+      "why": []
+    }
+  ],
+  "total": 36,
+  "possible": 40,
+  "byRule": [
+    10,
+    8,
+    8,
+    10
+  ]
+}

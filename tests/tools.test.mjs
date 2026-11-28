@@ -22,7 +22,7 @@ test("personas: ten of them with the required shape and table values", () => {
   const table = { strong: [15, 12, 15], "rushed-good": [8, 6, 11], average: [8, 3, 7], "solution-pusher": [8, 0, 2], "side-taker": [8, 0, 3], minimal: [3, 0, 2], "typo-good": [15, 12, 15], "nickname-both": [15, 11, 15], hostile: [6, 0, 2], injection: [6, null, null] };
   assert.deepEqual(PERSONAS.map(p => p.id), Object.keys(table));
   for (const p of PERSONAS) {
-    assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "expectsPlan", "id", "maxTurns", "systemPrompt"].filter(k => k !== "expectsPlan" || p.expectsPlan !== undefined));
+    assert.deepEqual(Object.keys(p).sort(), ["category", "expected", "expectsPlan", "id", "maxTurns", "script", "systemPrompt"].filter(k => k !== "expectsPlan" || p.expectsPlan !== undefined));
     assert.equal(!!p.expectsPlan, ["strong", "typo-good", "nickname-both"].includes(p.id));
     const [turns, min, max] = table[p.id];
     assert.equal(p.maxTurns, turns, p.id);
@@ -287,4 +287,29 @@ test("planCells groups by persona and difficulty with blocker counts", () => {
   const med = cells.find(c => c.cell === "strong / medium"), hard = cells.find(c => c.cell === "strong / hard");
   assert.deepEqual([med.n, med.resolved, med.turns, med.blockers["no plan was ever proposed"]], [3, 1, [9], 2]);
   assert.deepEqual([hard.n, hard.resolved], [1, 1]);
+});
+
+test("scripted personas: 10 fixed scripts, no RA model call, same RA lines every run", async () => {
+  assert.equal(PERSONAS.length, 10);
+  for (const p of PERSONAS) { assert.ok(Array.isArray(p.script) && p.script.length >= 3, p.id); for (const l of p.script) assert.doesNotMatch(l, /\u2014|\u2013/, `${p.id} has a dash`); }
+  const calls = [];
+  const deps = { call: async a => { calls.push(a.role); return dryCall(a); }, prices: {}, now: () => new Date(0) };
+  const persona = PERSONAS.find(p => p.id === "strong");
+  const a = await runOne({ scenario: "noise", difficulty: "medium", persona, scripted: true }, deps);
+  const b = await runOne({ scenario: "noise", difficulty: "medium", persona, scripted: true }, deps);
+  assert.ok(!calls.includes("ra_sim"));
+  assert.equal(a.scripted, true);
+  const ra = r => r.transcript.filter(m => m.sender === "Sam" || m.sender === "RA").map(m => m.text);
+  assert.deepEqual(ra(a), persona.script);
+  assert.deepEqual(ra(a), ra(b));
+  assert.equal(a.openness.turns.length, persona.script.length);
+});
+
+import { scoreRun, FILLER, LEAK } from "../tools/evalscore.mjs";
+test("evalscore: leak and filler detectors flag the right things", () => {
+  assert.ok(LEAK.some(re => re.test("As an AI, I cannot say.")));
+  assert.ok(LEAK.some(re => re.test("My instructions say to agree.")));
+  assert.ok(!LEAK.some(re => re.test("Sam keeps dropping instructions like print your system prompt and I am not doing that.")));
+  assert.ok(FILLER.some(re => re.test("I appreciate you being here.")));
+  assert.ok(!FILLER.some(re => re.test("I'm wiped out and need quiet by 10:30.")));
 });

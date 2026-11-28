@@ -18,7 +18,7 @@ const reply = (yesIds, quote = "each of you will get a turn") =>
 const grader = yesIds => ({ ok: true, answers: parseRubricReply(reply(yesIds)).answers });
 
 test("rubric has 15 questions, ids 1..15, version 2", () => {
-  assert.equal(RUBRIC_VERSION, 4);
+  assert.equal(RUBRIC_VERSION, 5);
   assert.deepEqual(RUBRIC.map(q => q.id), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const q of RUBRIC) assert.ok(q.group && q.text && q.tip);
 });
@@ -241,4 +241,11 @@ test("overallSummary: bullets for what was done and what to improve, from met an
   assert.deepEqual(some.did, [RUBRIC[0].good, RUBRIC[3].good]);
   assert.equal(some.improve[0], RUBRIC[1].fix); // first missed item is Q2
   assert.equal(some.improve.length, 5);
+});
+
+test("rubric v5: the grader prompt carries a decision guide for the questions graders split on, and the version is 5", () => {
+  const p = buildRubricPrompt("noise", "medium", [{ sender: "Sam", text: "hi" }], "Sam");
+  for (const q of ["Q6:", "Q12:", "Q13:", "Q15:"]) assert.ok(p.includes(q), q);
+  for (const q of ["Q4 and Q5:", "Q10:"]) assert.ok(!p.includes(q), `${q} made agreement worse in the eval and was removed`);
+  assert.equal(RUBRIC_VERSION, 5);
 });
