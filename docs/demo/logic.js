@@ -420,6 +420,7 @@ RULES:
 - Say 1 to 3 short sentences, in a spoken style, the way a college student would talk.
 - No lists.
 - Address ${raName === "RA" ? "the RA" : raName} directly.
+- Do NOT start with a stock phrase such as "I appreciate you...", "I understand...", "Thank you for sharing" or "That's a valid point". Start with what you actually feel or need.
 - Do NOT use em dashes. Use periods or commas only.
 - Do NOT prefix with "${p.name}:".`;
 }

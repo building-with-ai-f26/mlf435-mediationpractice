@@ -4,7 +4,10 @@
 // 2: the grader prompt now requires a quote for the "avoid" questions (Q8, Q9, Q11). No question text changed.
 // 4: the parser drops a leading "RA:" label from a quote. Claude often copied it, so correct quotes failed the evidence check and its score collapsed (it agreed with GPT on 71% of questions before, 83% after). No question, prompt or evidence rule changed.
 // 3: the three graders changed (Claude Haiku 5.5, Gemini 3.6 Flash, GPT-6 Luna replace DeepSeek, Claude, Llama or Gemini 2.5), so scores are not comparable with versions 1 and 2. No question, prompt or evidence rule changed.
-export const RUBRIC_VERSION = 4;
+// 5: the grader prompt gets a short decision guide for Q6, Q12, Q13 and Q15 so the three graders apply one standard. No question text changed.
+//    Found by the Build 4 eval: on the middle-quality RAs (rushed-good, average) the graders agreed on only about 50% of questions. A first guide that also
+//    covered Q4, Q5 and Q10 made Claude stricter and hurt agreement (Q10 splits 4 to 8), so those lines were dropped.
+export const RUBRIC_VERSION = 5;
 
 export const RUBRIC = [
   { id: 1, group: "Setting the stage", short: "Explained why you met and that both would speak", good: "Explained why you were meeting and that both would get a turn.", fix: "Open by saying why you are meeting and that both will get a turn.", text: "Did the RA explain why they were meeting and say that both Alex and Jordan would get a chance to speak?", tip: "Start by saying why you are meeting and that each person will get time to speak." },
@@ -47,6 +50,11 @@ Rules:
 - Answer YES only if you can quote the RA. The quote must be copied exactly from an RA message.
 - Never write a bare YES. A YES with no quote counts as NO.
 - Q8, Q9 and Q11 ask whether the RA held back from something. To answer YES you must still quote one RA line that shows the good behavior: for Q8 a line that treats the problem as shared or stays even-handed, for Q9 a line that asks instead of tells, for Q11 a line that draws out or reflects both roommates before any solution is discussed. If you cannot find such a line, answer NO.
+- Use this guide so every grader applies the same standard:
+  Q6: YES if an RA line names a feeling (such as exhausted, frustrated, worried, stressed) that a roommate has. Asking "how are you feeling" does not name one.
+  Q12: YES if an RA line asks the roommates for their own ideas or options ("what could help?", "what ideas do you have?"). Offering the RA's own suggestion with "does that work?" is NO.
+  Q13: YES if an RA line asks what a roommate would try, change or give up. A line to both roommates counts for both.
+  Q15: YES for a check-in date, a follow-up, the Roommate Living Agreement, or an offer of further support such as "let me know if anything comes up".
 - If you are unsure, answer NO.
 - No partial credit. Each answer is YES or NO.
 
